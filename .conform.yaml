@@ -1,0 +1,20 @@
+# code-bee · 项目目录结构校验
+# 用法: conform enforce
+
+structure:
+  directories:
+    required:
+      - cmd/worker
+      - internal/platform
+      - internal/parser
+      - internal/agent
+      - internal/pipeline
+      - internal/config
+      - pkg/version
+
+  files:
+    required:
+      - README.md
+      - Makefile
+      - go.mod
+      - cmd/worker/main.go
