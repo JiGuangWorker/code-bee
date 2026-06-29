@@ -13,7 +13,7 @@ export GITHUB_TOKEN=ghp_xxx
 # 2. 在 Issue 中 @agent-name，如 @agent-frontend 请重构组件
 
 # 3. 执行
-code-bee --repo JiGuangWorker/DeepSeek-Reasonix --issue 42
+code-bee --repo your-org/your-repo --issue 42
 ```
 
 ## Issue 模板

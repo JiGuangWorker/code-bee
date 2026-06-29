@@ -1,4 +1,7 @@
-// Package agent 管理 Docker 容器中的 Reasonix Agent 执行。
+// Package agent 管理编码智能体的调用。
+//
+// code-bee 只做一件事：生成任务指令，交给编码智能体执行。
+// 智能体自行完成：读取 Issue、解析任务、编码、提交 PR。
 package agent
 
 import (
@@ -7,30 +10,25 @@ import (
 	"os/exec"
 )
 
-// RunResult 表示 Agent 执行结果。
+// RunResult 表示编码智能体的执行结果。
 type RunResult struct {
 	Success bool   // 是否成功
 	Output  string // 执行输出
 }
 
-// Runner 管理 Docker Agent 的执行。
-type Runner struct {
-	agentName string
-	image     string
+// Runner 管理编码智能体的调用。
+type Runner struct{}
+
+// New 创建编码智能体执行器。
+func New() *Runner {
+	return &Runner{}
 }
 
-// New 创建 Agent 执行器。
-func New(agentName string) *Runner {
-	return &Runner{
-		agentName: agentName,
-		image:     fmt.Sprintf("jiguang-agent-%s:latest", agentName),
-	}
-}
-
-// Run 在 Docker 容器中执行 Reasonix。
-// task 是自然语言描述的任务内容。
+// Run 调用编码智能体，传入任务指令。
+// task 是一句自然语言任务描述，例如：
+//
+//	"请查看 owner/repo 仓库的 #42 Issue，并完成其中的编码任务。"
 func (r *Runner) Run(ctx context.Context, task string) (*RunResult, error) {
-	// V1 阶段：直接调用 reasonix run，后续替换为 Docker 方式
 	cmd := exec.CommandContext(ctx,
 		"reasonix", "run", task,
 	)
@@ -40,7 +38,7 @@ func (r *Runner) Run(ctx context.Context, task string) (*RunResult, error) {
 		return &RunResult{
 			Success: false,
 			Output:  string(output),
-		}, fmt.Errorf("agent.Run(%s): reasonix failed: %w\n%s", r.agentName, err, string(output))
+		}, fmt.Errorf("agent.Run: reasonix failed: %w\n%s", err, string(output))
 	}
 
 	return &RunResult{

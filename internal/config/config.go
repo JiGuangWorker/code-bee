@@ -1,63 +1,78 @@
-// Package config 提供统一的配置管理。
+// Package config 管理 code-bee 的运行时配置。
+//
+// 配置来源优先级：命令行参数 > 环境变量 > 默认值。
 package config
 
-import (
-	"errors"
-	"fmt"
-	"os"
-	"strings"
+import "os"
 
-	"github.com/JiGuangWorker/code-bee/internal/platform"
-	"github.com/JiGuangWorker/code-bee/internal/platform/github"
-)
-
-// Config 聚合所有运行时配置。
+// Config 表示 code-bee 的完整运行时配置。
 type Config struct {
-	// Repo 仓库地址，如 "JiGuangWorker/DeepSeek-Reasonix"
+	// Repo 是目标仓库，格式 owner/repo。
 	Repo string
-	// IssueNumber Issue 编号
+
+	// IssueNumber 是目标 Issue 编号。
 	IssueNumber int
-	// Token 平台 API Token
-	Token string
-	// Platform 根据 Repo 自动识别的平台 Adapter
-	Platform platform.Platform
+
+	// GitHubToken 用于访问 GitHub API。
+	// 默认从环境变量 GITHUB_TOKEN 读取。
+	GitHubToken string
+
+	// DefaultAgent 是当 Issue 中未发现 @agent-name 时使用的默认智能体。
+	DefaultAgent string
 }
 
-// Load 从环境变量和参数加载配置，并自动识别平台。
-func Load(repo string, issueNumber int) (*Config, error) {
-	if repo == "" {
-		return nil, errors.New("repo is required")
-	}
-	if issueNumber <= 0 {
-		return nil, errors.New("issue number must be positive")
-	}
+// AgentRole 定义了一个可调度的智能体角色。
+type AgentRole struct {
+	// Name 是 @ 语法中的名称，如 "开发者"、"技术负责人"。
+	Name string
 
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return nil, errors.New("GITHUB_TOKEN environment variable is required")
-	}
+	// SkillPath 是该角色对应的 Skill 文件路径（相对于 .skills/ 目录）。
+	SkillPath string
 
-	cfg := &Config{
-		Repo:        repo,
-		IssueNumber: issueNumber,
-		Token:       token,
-	}
-
-	p, err := detectPlatform(cfg)
-	if err != nil {
-		return nil, err
-	}
-	cfg.Platform = p
-
-	return cfg, nil
+	// Description 是角色的简短描述。
+	Description string
 }
 
-// detectPlatform 根据仓库地址自动识别并创建对应的 Platform 实例。
-func detectPlatform(cfg *Config) (platform.Platform, error) {
-	switch {
-	case strings.Contains(cfg.Repo, "github.com"):
-		return github.New(cfg.Token), nil
-	default:
-		return nil, fmt.Errorf("unsupported platform for repo: %s", cfg.Repo)
+// BuiltinAgents 返回内置的智能体角色列表。
+// 这些角色与 .skills/ 目录中的 Skill 定义一一对应。
+func BuiltinAgents() []AgentRole {
+	return []AgentRole{
+		{Name: "开发者", SkillPath: "开发者Skill/SKILL.md", Description: "负责将 Issue 转化为符合规范的代码"},
+		{Name: "技术负责人", SkillPath: "技术负责人Skill/SKILL.md", Description: "负责工程团队的交付质量与效率"},
+		{Name: "架构师", SkillPath: "架构师Skill/SKILL.md", Description: "负责数据结构设计与逻辑流程设计"},
+		{Name: "产品经理", SkillPath: "产品经理Skill/SKILL.md", Description: "负责需求捕捉、PRD 编写与评审主持"},
+		{Name: "QA负责人", SkillPath: "QA负责人Skill/SKILL.md", Description: "负责测试用例生成与验收放行"},
+		{Name: "UI负责人", SkillPath: "UI负责人Skill/SKILL.md", Description: "负责生图与配音"},
+	}
+}
+
+// AgentByName 根据名称查找内置智能体角色。
+// 如果未找到，返回 false。
+func AgentByName(name string) (AgentRole, bool) {
+	for _, a := range BuiltinAgents() {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return AgentRole{}, false
+}
+
+// AgentNames 返回所有内置智能体的名称列表。
+func AgentNames() []string {
+	agents := BuiltinAgents()
+	names := make([]string, len(agents))
+	for i, a := range agents {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// New 创建一个带有默认值的 Config。
+func New(repo string, issueNumber int) *Config {
+	return &Config{
+		Repo:         repo,
+		IssueNumber:  issueNumber,
+		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
+		DefaultAgent: "开发者",
 	}
 }
