@@ -248,28 +248,60 @@ func (s *Service) runCodingReviewLoop(
 
 		reviewerFeedback, consecutiveUnknowns = nextReviewerFeedback(reviewResult, consecutiveUnknowns)
 
-		if shouldRunLoopJudge(cfg, round) {
-			judgeResult, judgeOutput, judgeErr := s.runLoopJudgeRound(
-				ctx, cfg, dispatchCtx, round, maxRounds,
-			)
-			if judgeErr != nil {
-				return &Result{Success: false, Output: judgeOutput}, judgeErr
+		judgeOutcome, judgeRan := s.runLoopJudgeIfNeeded(ctx, cfg, dispatchCtx, round, maxRounds, reviewerFeedback)
+		if judgeRan {
+			if judgeOutcome.result != nil {
+				return judgeOutcome.result, nil
 			}
-			lastOutput = judgeOutput
-
-			switch judgeResult.Decision {
-			case loopJudgeDecisionStopManual:
-				return &Result{Success: true, ManualRequired: true, Output: judgeOutput}, nil
-			case loopJudgeDecisionStopBlocked:
-				return &Result{Success: true, Blocked: true, ManualRequired: true, Output: judgeOutput}, nil
-			case loopJudgeDecisionShrinkTask:
-				reviewerFeedback = buildLoopJudgeFeedback(judgeResult) + "\n\n" + reviewerFeedback
-			case loopJudgeDecisionContinue:
-			}
+			lastOutput = judgeOutcome.output
+			reviewerFeedback = judgeOutcome.nextFeedback
 		}
 	}
 
 	return &Result{Success: true, ManualRequired: true, Output: lastOutput}, nil
+}
+
+// loopJudgeOutcome 收集价值评估员单次执行后的中间产物，便于主循环判断是否需要中断或调整反馈。
+type loopJudgeOutcome struct {
+	result       *Result
+	output       string
+	nextFeedback string
+}
+
+// runLoopJudgeIfNeeded 在满足触发条件时执行价值评估员，并返回其对外层循环的影响。
+//
+// 输入参数:
+// - reviewerFeedback: 当前累积的 reviewer 反馈，SHRINK_TASK 时会与之合并
+//
+// 返回值:
+// - loopJudgeOutcome: 评估结果，当 result 为 nil 时表示继续循环
+// - bool: 是否实际执行了价值评估员
+func (s *Service) runLoopJudgeIfNeeded(
+	ctx context.Context,
+	cfg *config.Config,
+	dispatchCtx dispatchContext,
+	round, maxRounds int,
+	reviewerFeedback string,
+) (loopJudgeOutcome, bool) {
+	if !shouldRunLoopJudge(cfg, round) {
+		return loopJudgeOutcome{}, false
+	}
+
+	judgeResult, judgeOutput, judgeErr := s.runLoopJudgeRound(ctx, cfg, dispatchCtx, round, maxRounds)
+	if judgeErr != nil {
+		return loopJudgeOutcome{result: &Result{Success: false, Output: judgeOutput}}, true
+	}
+
+	outcome := loopJudgeOutcome{output: judgeOutput, nextFeedback: reviewerFeedback}
+	switch judgeResult.Decision {
+	case loopJudgeDecisionStopManual:
+		outcome.result = &Result{Success: true, ManualRequired: true, Output: judgeOutput}
+	case loopJudgeDecisionStopBlocked:
+		outcome.result = &Result{Success: true, Blocked: true, ManualRequired: true, Output: judgeOutput}
+	case loopJudgeDecisionShrinkTask:
+		outcome.nextFeedback = buildLoopJudgeFeedback(judgeResult) + "\n\n" + reviewerFeedback
+	}
+	return outcome, true
 }
 
 // finishSuccessfulReview 在 reviewer 明确 PASS 后，调用 Issue 提交智能体提交最终完成评论。

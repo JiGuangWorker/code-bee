@@ -48,6 +48,14 @@ func main() {
 	}))
 }
 
+// usageError 当参数缺失或解析失败时，向 stderr 输出统一的使用说明。
+func usageError(stderr io.Writer) int {
+	fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number>\n\n")
+	fmt.Fprintf(stderr, "示例:\n")
+	fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42\n")
+	return 1
+}
+
 // runCLI 是 CLI 入口的可测试版本，接收注入的 io.Writer 和 serviceFactory。
 //
 // 返回值:
@@ -62,10 +70,7 @@ func runCLI(args []string, stdout, stderr io.Writer, serviceFactory func() dispa
 	showVersion := fs.Bool("version", false, "输出版本信息")
 
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number>\n\n")
-		fmt.Fprintf(stderr, "示例:\n")
-		fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42\n")
-		return 1
+		return usageError(stderr)
 	}
 
 	if *showVersion {
@@ -74,10 +79,7 @@ func runCLI(args []string, stdout, stderr io.Writer, serviceFactory func() dispa
 	}
 
 	if *repo == "" || *issueNumber <= 0 {
-		fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number>\n\n")
-		fmt.Fprintf(stderr, "示例:\n")
-		fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42\n")
-		return 1
+		return usageError(stderr)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -97,6 +99,15 @@ func runCLI(args []string, stdout, stderr io.Writer, serviceFactory func() dispa
 		return 1
 	}
 
+	return reportDispatchResult(result, stdout, stderr)
+}
+
+// reportDispatchResult 将调度结果映射为用户可见消息与退出码。
+//
+// 返回值:
+// - 0: 任务顺利完成
+// - 1: 阻塞、需要人工介入或智能体失败
+func reportDispatchResult(result *pipeline.Result, stdout, stderr io.Writer) int {
 	if result.Success && result.Completed {
 		fmt.Fprintln(stdout, "\n✅ reviewer 已明确 PASS，且最终 Issue 回复已提交，任务执行完成")
 		return 0

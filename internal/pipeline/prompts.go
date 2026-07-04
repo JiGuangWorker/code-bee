@@ -328,7 +328,7 @@ func buildIssuePostPrompt(
 		purpose,
 		platformGuide,
 		previousFeedback,
-		)
+	)
 }
 
 // buildLoopJudgePrompt 构造价值评估阶段提示词。

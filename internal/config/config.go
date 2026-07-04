@@ -99,14 +99,14 @@ func AgentNames() []string {
 // New 创建一个带有默认值的 Config。
 func New(repo string, issueNumber int) *Config {
 	return &Config{
-		Repo:                repo,
-		IssueNumber:         issueNumber,
-		GitHubToken:         os.Getenv("GITHUB_TOKEN"),
-		DefaultAgent:        "开发者",
-		ReviewerAgent:       "QA负责人",
-		IssuePostAgent:      "产品经理",
-		LoopJudgeAgent:      "技术负责人",
-		MaxCodingReviewRounds:  defaultMaxCodingReviewRounds,
+		Repo:                  repo,
+		IssueNumber:           issueNumber,
+		GitHubToken:           os.Getenv("GITHUB_TOKEN"),
+		DefaultAgent:          "开发者",
+		ReviewerAgent:         "QA负责人",
+		IssuePostAgent:        "产品经理",
+		LoopJudgeAgent:        "技术负责人",
+		MaxCodingReviewRounds: defaultMaxCodingReviewRounds,
 		LoopJudgeStartRound:   defaultLoopJudgeStartRound,
 	}
 }
