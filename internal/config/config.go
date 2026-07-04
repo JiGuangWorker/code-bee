@@ -19,6 +19,14 @@ type Config struct {
 
 	// DefaultAgent 是当 Issue 中未发现 @agent-name 时使用的默认智能体。
 	DefaultAgent string
+
+	// ReviewerAgent 是 coder-reviewer loop 中默认的审查智能体。
+	// 当前版本固定使用内置角色，避免主流程里散落硬编码字符串。
+	ReviewerAgent string
+
+	// IssuePostAgent 是专门负责 Issue 提交的智能体。
+	// 该角色不直接编码，而是负责校验结果文件并完成最终评论提交。
+	IssuePostAgent string
 }
 
 // AgentRole 定义了一个可调度的智能体角色。
@@ -70,9 +78,11 @@ func AgentNames() []string {
 // New 创建一个带有默认值的 Config。
 func New(repo string, issueNumber int) *Config {
 	return &Config{
-		Repo:         repo,
-		IssueNumber:  issueNumber,
-		GitHubToken:  os.Getenv("GITHUB_TOKEN"),
-		DefaultAgent: "开发者",
+		Repo:           repo,
+		IssueNumber:    issueNumber,
+		GitHubToken:    os.Getenv("GITHUB_TOKEN"),
+		DefaultAgent:   "开发者",
+		ReviewerAgent:  "QA负责人",
+		IssuePostAgent: "产品经理",
 	}
 }
