@@ -5,6 +5,16 @@ package config
 
 import "os"
 
+// 默认值常量，集中维护避免散落硬编码。
+const (
+	// defaultMaxCodingReviewRounds 是 coder-reviewer loop 默认最大轮数。
+	defaultMaxCodingReviewRounds = 3
+
+	// defaultLoopJudgeStartRound 是价值评估员默认触发起始轮。
+	// 0 表示始终触发。
+	defaultLoopJudgeStartRound = 0
+)
+
 // Config 表示 code-bee 的完整运行时配置。
 type Config struct {
 	// Repo 是目标仓库，格式 owner/repo。
@@ -27,6 +37,17 @@ type Config struct {
 	// IssuePostAgent 是专门负责 Issue 提交的智能体。
 	// 该角色不直接编码，而是负责校验结果文件并完成最终评论提交。
 	IssuePostAgent string
+
+	// LoopJudgeAgent 是 coder-reviewer loop 中默认的价值评估智能体。
+	// 负责判断当前循环是否还有继续价值。
+	LoopJudgeAgent string
+
+	// LoopJudgeStartRound 表示从第几轮开始触发价值评估员。
+	// 0 表示始终触发；大于 0 则表示从该轮开始才触发。
+	LoopJudgeStartRound int
+
+	// MaxCodingReviewRounds 表示 coder-reviewer loop 的最大执行轮数。
+	MaxCodingReviewRounds int
 }
 
 // AgentRole 定义了一个可调度的智能体角色。
@@ -78,11 +99,14 @@ func AgentNames() []string {
 // New 创建一个带有默认值的 Config。
 func New(repo string, issueNumber int) *Config {
 	return &Config{
-		Repo:           repo,
-		IssueNumber:    issueNumber,
-		GitHubToken:    os.Getenv("GITHUB_TOKEN"),
-		DefaultAgent:   "开发者",
-		ReviewerAgent:  "QA负责人",
-		IssuePostAgent: "产品经理",
+		Repo:                repo,
+		IssueNumber:         issueNumber,
+		GitHubToken:         os.Getenv("GITHUB_TOKEN"),
+		DefaultAgent:        "开发者",
+		ReviewerAgent:       "QA负责人",
+		IssuePostAgent:      "产品经理",
+		LoopJudgeAgent:      "技术负责人",
+		MaxCodingReviewRounds:  defaultMaxCodingReviewRounds,
+		LoopJudgeStartRound:   defaultLoopJudgeStartRound,
 	}
 }

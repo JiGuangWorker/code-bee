@@ -73,6 +73,35 @@ func (a *ArtifactSet) IssuePostResultPath(purpose string) string {
 	return filepath.Join(a.BaseDir, fmt.Sprintf("issue_post_result_%s.json", safePurpose))
 }
 
+// EnsureRoundDir 为指定轮次创建工件子目录。
+func (a *ArtifactSet) EnsureRoundDir(round int) error {
+	dir := filepath.Join(a.BaseDir, fmt.Sprintf("round-%02d", round))
+	if err := os.MkdirAll(dir, artifactDirPermission); err != nil {
+		return fmt.Errorf("create round directory %s: %w", dir, err)
+	}
+	return nil
+}
+
+// CodingResultPathForRound 返回指定轮次的 coding 结果文件路径。
+func (a *ArtifactSet) CodingResultPathForRound(round int) string {
+	return filepath.Join(a.BaseDir, fmt.Sprintf("round-%02d", round), "coding_result.json")
+}
+
+// ReviewResultPathForRound 返回指定轮次的 review 结果文件路径。
+func (a *ArtifactSet) ReviewResultPathForRound(round int) string {
+	return filepath.Join(a.BaseDir, fmt.Sprintf("round-%02d", round), "review_result.json")
+}
+
+// LoopJudgeResultPath 返回指定轮次的 loop judge 结果文件路径。
+func (a *ArtifactSet) LoopJudgeResultPath(round int) string {
+	return filepath.Join(a.BaseDir, fmt.Sprintf("round-%02d", round), "loop_judge_result.json")
+}
+
+// LoopHistoryPath 返回聚合历史文件路径。
+func (a *ArtifactSet) LoopHistoryPath() string {
+	return filepath.Join(a.BaseDir, "loop_history.json")
+}
+
 // sanitizeRepoName 将 owner/repo 形式的仓库名转换为安全目录名。
 func sanitizeRepoName(repo string) string {
 	replacer := strings.NewReplacer("/", "__", "\\", "__", " ", "_", ":", "_")

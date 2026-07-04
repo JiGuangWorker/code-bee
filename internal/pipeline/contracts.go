@@ -177,6 +177,73 @@ func (r *IssuePostResult) BlockedStatus() bool {
 	return r != nil && r.Status == postStatusBlocked
 }
 
+const (
+	loopJudgeDecisionContinue    = "CONTINUE"
+	loopJudgeDecisionShrinkTask  = "SHRINK_TASK"
+	loopJudgeDecisionStopManual  = "STOP_MANUAL"
+	loopJudgeDecisionStopBlocked = "STOP_BLOCKED"
+)
+
+// LoopJudgeResult 表示价值评估员写入的结构化结果文件。
+type LoopJudgeResult struct {
+	// Decision 表示评估结论：继续、收缩任务、停止人工、停止阻塞。
+	Decision string `json:"decision"`
+
+	// Reason 是对当前决策的详细说明。
+	Reason string `json:"reason"`
+
+	// Evidence 是支撑决策的引用证据，必须引用具体轮次或事实。
+	Evidence string `json:"evidence"`
+
+	// Confidence 是评估置信度。
+	Confidence string `json:"confidence"`
+
+	// NextAction 是本次评估后的下一步动作。
+	NextAction string `json:"next_action"`
+}
+
+// loadLoopJudgeResult 从文件中读取并校验价值评估结果。
+func loadLoopJudgeResult(filePath string) (*LoopJudgeResult, error) {
+	var result LoopJudgeResult
+	if err := loadJSONFile(filePath, &result); err != nil {
+		return nil, err
+	}
+
+	if err := validateLoopJudgeResult(&result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// validateLoopJudgeResult 校验价值评估结果文件的最小完整性。
+func validateLoopJudgeResult(result *LoopJudgeResult) error {
+	switch result.Decision {
+	case loopJudgeDecisionContinue, loopJudgeDecisionShrinkTask,
+		loopJudgeDecisionStopManual, loopJudgeDecisionStopBlocked:
+	default:
+		return fmt.Errorf("invalid loop judge decision %q", result.Decision)
+	}
+
+	if strings.TrimSpace(result.Evidence) == "" {
+		return fmt.Errorf("empty loop judge evidence")
+	}
+
+	if strings.TrimSpace(result.Reason) == "" {
+		return fmt.Errorf("empty loop judge reason")
+	}
+
+	if strings.TrimSpace(result.Confidence) == "" {
+		return fmt.Errorf("empty loop judge confidence")
+	}
+
+	if strings.TrimSpace(result.NextAction) == "" {
+		return fmt.Errorf("empty loop judge next_action")
+	}
+
+	return nil
+}
+
 // loadIssueHandlingResult 从文件中读取并校验 Issue 处理结果。
 func loadIssueHandlingResult(filePath string) (*IssueHandlingResult, error) {
 	var result IssueHandlingResult
