@@ -4,6 +4,8 @@
 
 **code-bee** 是一个极简的 AI 编码调度器。它不写代码，只做一件事：发现 Issue 中的任务，交给编码智能体去完成。像蜂巢中的工蜂一样，每个 Agent 各司其职，而你只需要在 Issue 中 `@agent-name` 描述需求。
 
+![code-bee 工作流](https://raw.githubusercontent.com/JiGuangWorker/code-bee/dev/v1-pipeline/docs/images/readme/01-what-is-codebee.png)
+
 ---
 
 ## ✨ 为什么选择 code-bee？
@@ -26,21 +28,18 @@
 
 ### 架构一览
 
-```
-GitHub Issue (@agent-frontend 重构组件)
-        │
-        ▼
-   🐝 code-bee          ← 解析 Issue，生成任务指令
-        │
-        ▼
-   🧠 Reasonix (DeepSeek) ← 接收指令，自主编码
-        │
-        ▼
-   🔧 GitHub CLI (gh)    ← fork → clone → commit → push → create PR
-        │
-        ▼
-   ✅ 校验通过 → PR 提交 → Issue 回复结果
-```
+当前版本的 `code-bee` 已经不是"单智能体一次跑完"的模型，而是一个最小四阶段 harness：
+
+![四阶段架构](https://raw.githubusercontent.com/JiGuangWorker/code-bee/dev/v1-pipeline/docs/images/readme/02-architecture.png)
+
+其中：
+
+- `code-bee` 只负责外层调度和工件流转，不负责业务理解
+- `Coding Agent` 不直接回复 Issue，只写结构化结果
+- `Review Agent` 的 `PASS` 是 loop 成功退出的唯一前提
+- 最终由专门的 `Issue Post Agent` 负责对外提交 Issue 评论
+
+更完整的角色拆分与增强版 `loop judge` 架构图见：[Issue #4](https://github.com/JiGuangWorker/code-bee/issues/4)
 
 ---
 
@@ -104,11 +103,12 @@ code-bee --repo your-org/your-repo --issue 42
 .
 ├── cmd/worker/          # CLI 入口
 ├── internal/
-│   ├── agent/           # 编码智能体调度
+│   ├── agent/           # 多阶段智能体运行器
 │   ├── config/          # 配置管理
-│   ├── parser/          # Issue 解析
-│   ├── pipeline/        # 执行管线
-│   └── platform/        # 平台适配
+│   ├── parser/          # 预留解析能力
+│   ├── pipeline/        # 四阶段 harness 与 loop 契约
+│   └── platform/        # 平台技能包适配
+├── docs/                # 架构与设计文档
 ├── pkg/version/         # 版本信息
 ├── Makefile             # 统一操作入口
 ├── .conform.yaml        # 目录结构校验
