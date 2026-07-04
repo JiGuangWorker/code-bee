@@ -53,58 +53,14 @@ func (a *ArtifactSet) IssueHandlingResultPath() string {
 	return filepath.Join(a.BaseDir, "issue_intake_result.json")
 }
 
-// RoundDirPath 返回指定轮次的历史工件目录。
-//
-// 输入参数:
-// - round: 当前 coder-reviewer loop 的轮次，从 1 开始
-//
-// 返回值:
-// - string: 当前轮次对应的稳定目录路径
-//
-// 调用注意事项:
-// - round 小于等于 0 时会回退到 round-00，避免出现非法空目录名
-func (a *ArtifactSet) RoundDirPath(round int) string {
-	if round < 0 {
-		round = 0
-	}
-
-	return filepath.Join(a.BaseDir, fmt.Sprintf("round-%02d", round))
+// CodingResultPath 返回 coding 结果文件路径。
+func (a *ArtifactSet) CodingResultPath() string {
+	return filepath.Join(a.BaseDir, "coding_result.json")
 }
 
-// EnsureRoundDir 为指定轮次创建历史工件目录。
-//
-// 输入参数:
-// - round: 当前 coder-reviewer loop 的轮次
-//
-// 返回值:
-// - error: 当目录创建失败时返回错误
-func (a *ArtifactSet) EnsureRoundDir(round int) error {
-	roundDir := a.RoundDirPath(round)
-	if err := os.MkdirAll(roundDir, artifactDirPermission); err != nil {
-		return fmt.Errorf("create round artifact directory %s: %w", roundDir, err)
-	}
-
-	return nil
-}
-
-// CodingResultPath 返回指定轮次的 coding 结果文件路径。
-func (a *ArtifactSet) CodingResultPath(round int) string {
-	return filepath.Join(a.RoundDirPath(round), "coding_result.json")
-}
-
-// ReviewResultPath 返回指定轮次的 review 结果文件路径。
-func (a *ArtifactSet) ReviewResultPath(round int) string {
-	return filepath.Join(a.RoundDirPath(round), "review_result.json")
-}
-
-// LoopJudgeResultPath 返回指定轮次的 loop judge 结果文件路径。
-func (a *ArtifactSet) LoopJudgeResultPath(round int) string {
-	return filepath.Join(a.RoundDirPath(round), "loop_judge_result.json")
-}
-
-// LoopHistoryPath 返回跨轮次聚合历史文件路径。
-func (a *ArtifactSet) LoopHistoryPath() string {
-	return filepath.Join(a.BaseDir, "loop_history.json")
+// ReviewResultPath 返回 review 结果文件路径。
+func (a *ArtifactSet) ReviewResultPath() string {
+	return filepath.Join(a.BaseDir, "review_result.json")
 }
 
 // IssuePostResultPath 返回指定 purpose 下的 Issue 提交结果文件路径。

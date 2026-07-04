@@ -32,11 +32,6 @@ const (
 	postStatusPosted   = "POSTED"
 	postStatusRejected = "REJECTED"
 	postStatusBlocked  = "BLOCKED"
-
-	loopJudgeDecisionContinue    = "CONTINUE"
-	loopJudgeDecisionShrinkTask  = "SHRINK_TASK"
-	loopJudgeDecisionStopManual  = "STOP_MANUAL"
-	loopJudgeDecisionStopBlocked = "STOP_BLOCKED"
 )
 
 // Result 表示 code-bee 外层 loop 的最终执行结果。
@@ -167,44 +162,6 @@ type IssuePostResult struct {
 	NextAction string `json:"next_action"`
 }
 
-// LoopJudgeResult 表示价值评估员基于多轮历史做出的结构化判断。
-type LoopJudgeResult struct {
-	// Decision 表示价值评估员对自动循环的动作建议。
-	Decision string `json:"decision"`
-
-	// Reason 是本次判断的简要理由，要求能让人工快速理解为何继续或停止。
-	Reason string `json:"reason"`
-
-	// Evidence 是本次判断引用的轮次证据，要求明确说明依据来自哪些历史记录。
-	Evidence string `json:"evidence"`
-
-	// Confidence 是本次判断的置信度，便于后续扩展更保守的兜底策略。
-	Confidence string `json:"confidence"`
-
-	// NextAction 是给 orchestrator 或下游智能体的明确下一步动作说明。
-	NextAction string `json:"next_action"`
-}
-
-// Continue 返回价值评估员是否建议继续自动循环。
-func (r *LoopJudgeResult) Continue() bool {
-	return r != nil && r.Decision == loopJudgeDecisionContinue
-}
-
-// ShrinkTask 返回价值评估员是否建议收缩任务后再继续执行。
-func (r *LoopJudgeResult) ShrinkTask() bool {
-	return r != nil && r.Decision == loopJudgeDecisionShrinkTask
-}
-
-// StopManual 返回价值评估员是否建议停止自动循环并转人工。
-func (r *LoopJudgeResult) StopManual() bool {
-	return r != nil && r.Decision == loopJudgeDecisionStopManual
-}
-
-// StopBlocked 返回价值评估员是否建议因外部阻塞而停止自动循环。
-func (r *LoopJudgeResult) StopBlocked() bool {
-	return r != nil && r.Decision == loopJudgeDecisionStopBlocked
-}
-
 // Posted 返回 Issue 提交是否已成功完成。
 func (r *IssuePostResult) Posted() bool {
 	return r != nil && r.Status == postStatusPosted
@@ -270,20 +227,6 @@ func loadIssuePostResult(filePath string) (*IssuePostResult, error) {
 	}
 
 	if err := validateIssuePostResult(&result); err != nil {
-		return nil, err
-	}
-
-	return &result, nil
-}
-
-// loadLoopJudgeResult 从文件中读取并校验价值评估结果。
-func loadLoopJudgeResult(filePath string) (*LoopJudgeResult, error) {
-	var result LoopJudgeResult
-	if err := loadJSONFile(filePath, &result); err != nil {
-		return nil, err
-	}
-
-	if err := validateLoopJudgeResult(&result); err != nil {
 		return nil, err
 	}
 
@@ -423,35 +366,6 @@ func validateIssuePostResult(result *IssuePostResult) error {
 
 	if strings.TrimSpace(result.NextAction) == "" {
 		return fmt.Errorf("empty issue post next_action")
-	}
-
-	return nil
-}
-
-// validateLoopJudgeResult 校验价值评估结果的最小完整性。
-func validateLoopJudgeResult(result *LoopJudgeResult) error {
-	switch result.Decision {
-	case loopJudgeDecisionContinue, loopJudgeDecisionShrinkTask, loopJudgeDecisionStopManual, loopJudgeDecisionStopBlocked:
-	default:
-		return fmt.Errorf("invalid loop judge decision %q", result.Decision)
-	}
-
-	if strings.TrimSpace(result.Reason) == "" {
-		return fmt.Errorf("empty loop judge reason")
-	}
-
-	if strings.TrimSpace(result.Evidence) == "" {
-		return fmt.Errorf("empty loop judge evidence")
-	}
-
-	switch strings.TrimSpace(result.Confidence) {
-	case "HIGH", "MEDIUM", "LOW":
-	default:
-		return fmt.Errorf("invalid loop judge confidence %q", result.Confidence)
-	}
-
-	if strings.TrimSpace(result.NextAction) == "" {
-		return fmt.Errorf("empty loop judge next_action")
 	}
 
 	return nil

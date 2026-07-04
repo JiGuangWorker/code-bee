@@ -15,13 +15,6 @@ import (
 	"os/exec"
 )
 
-// execCommandContext 是对 exec.CommandContext 的最小封装。
-//
-// 设计说明:
-// - 通过可替换变量而不是在代码里写死 exec.CommandContext，便于单元测试注入伪命令执行器
-// - 正式运行时保持默认值，不改变生产行为
-var execCommandContext = exec.CommandContext
-
 // RunResult 表示编码智能体的执行结果。
 type RunResult struct {
 	// Success 表示本次智能体调用是否成功完成。
@@ -46,9 +39,6 @@ const (
 
 	// TaskKindIssuePost 表示“校验结果文件并提交 Issue 评论”的任务阶段。
 	TaskKindIssuePost TaskKind = "issue-post"
-
-	// TaskKindLoopJudge 表示“评估继续自动循环是否还有价值”的任务阶段。
-	TaskKindLoopJudge TaskKind = "loop-judge"
 )
 
 // Runner 管理编码智能体的调用。
@@ -80,7 +70,7 @@ func New() *Runner {
 // 调用注意事项:
 // - task 既可以是 Issue 处理任务，也可以是编码或审查任务
 func (r *Runner) Run(ctx context.Context, kind TaskKind, task string) (*RunResult, error) {
-	cmd := execCommandContext(ctx,
+	cmd := exec.CommandContext(ctx,
 		"reasonix", "run", task,
 	)
 
