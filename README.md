@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JiGuangWorker/code-bee/main/docs/images/logo/code-bee-logo.png" alt="code-bee logo" width="200">
+</p>
+
 # 🐝 code-bee
 
 > 在 GitHub Issue 中 @agent 下达任务，AI 编码智能体自动执行、校验、提 PR 并回复结果。
