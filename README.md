@@ -4,6 +4,8 @@
 
 **code-bee** 是一个极简的 AI 编码调度器。它不写代码，只做一件事：发现 Issue 中的任务，交给编码智能体去完成。像蜂巢中的工蜂一样，每个 Agent 各司其职，而你只需要在 Issue 中 `@agent-name` 描述需求。
 
+![code-bee 工作流](https://raw.githubusercontent.com/JiGuangWorker/code-bee/main/docs/images/readme/01-what-is-codebee.png)
+
 ---
 
 ## ✨ 为什么选择 code-bee？
@@ -26,21 +28,7 @@
 
 ### 架构一览
 
-```
-GitHub Issue (@agent-frontend 重构组件)
-        │
-        ▼
-   🐝 code-bee          ← 解析 Issue，生成任务指令
-        │
-        ▼
-   🧠 Reasonix (DeepSeek) ← 接收指令，自主编码
-        │
-        ▼
-   🔧 GitHub CLI (gh)    ← fork → clone → commit → push → create PR
-        │
-        ▼
-   ✅ 校验通过 → PR 提交 → Issue 回复结果
-```
+![四阶段架构](https://raw.githubusercontent.com/JiGuangWorker/code-bee/main/docs/images/readme/02-architecture.png)
 
 ---
 
