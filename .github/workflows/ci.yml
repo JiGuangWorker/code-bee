@@ -1,0 +1,68 @@
+# code-bee · 持续集成工作流
+#
+# 核心功能:
+# 1. 在代码推送或 PR 提交时自动运行编译、测试与静态分析
+# 2. 复用 Makefile 中已有的 build / test / lint 目标，保持本地与 CI 行为一致
+#
+# 触发时机:
+# - push 到 main / master 分支
+# - 针对 main / master 的 Pull Request
+#
+# 维护: AI Assistant
+# 创建时间: 2026-07-04
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+# 同一分支的新提交会取消正在跑的旧任务，节省资源
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Build & Test & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: 下载依赖
+        run: go mod download
+
+      - name: 校验 go.mod 同步
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "::error::go.mod 或 go.sum 不同步，请在本地运行 go mod tidy 后提交"
+            git --no-pager diff -- go.mod go.sum
+            exit 1
+          fi
+
+      - name: 编译
+        run: make build
+
+      - name: 单元测试
+        run: make test
+
+      - name: 静态分析
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --config .golangci.yml

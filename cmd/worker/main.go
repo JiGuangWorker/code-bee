@@ -14,6 +14,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
@@ -23,6 +24,11 @@ import (
 	platformgithub "github.com/JiGuangWorker/code-bee/internal/platform/github"
 	"github.com/JiGuangWorker/code-bee/pkg/version"
 )
+
+// dispatchService 是调度器的抽象接口，使 CLI 逻辑可独立于具体的 pipeline.Service 进行测试。
+type dispatchService interface {
+	Dispatch(context.Context, *config.Config) (*pipeline.Result, error)
+}
 
 // main 是 code-bee 的程序入口。
 //
@@ -34,63 +40,94 @@ import (
 // 调用注意事项:
 // - 需要本机已安装 reasonix，以便生成回执和执行编码任务
 func main() {
-	repo := flag.String("repo", "", "仓库地址，如 owner/repo")
-	issueNumber := flag.Int("issue", 0, "Issue 编号")
-	showVersion := flag.Bool("version", false, "输出版本信息")
-	flag.Parse()
+	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr, func() dispatchService {
+		return pipeline.NewService(
+			platformgithub.NewClient(),
+			agent.New(),
+		)
+	}))
+}
+
+// usageError 当参数缺失或解析失败时，向 stderr 输出统一的使用说明。
+func usageError(stderr io.Writer) int {
+	fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number>\n\n")
+	fmt.Fprintf(stderr, "示例:\n")
+	fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42\n")
+	return 1
+}
+
+// runCLI 是 CLI 入口的可测试版本，接收注入的 io.Writer 和 serviceFactory。
+//
+// 返回值:
+// - 0: 成功完成
+// - 1: 参数错误、调度失败或需要人工介入
+func runCLI(args []string, stdout, stderr io.Writer, serviceFactory func() dispatchService) int {
+	fs := flag.NewFlagSet("code-bee", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	repo := fs.String("repo", "", "仓库地址，如 owner/repo")
+	issueNumber := fs.Int("issue", 0, "Issue 编号")
+	showVersion := fs.Bool("version", false, "输出版本信息")
+
+	if err := fs.Parse(args); err != nil {
+		return usageError(stderr)
+	}
 
 	if *showVersion {
-		fmt.Println(version.Info())
-		return
+		fmt.Fprintln(stdout, version.Info())
+		return 0
 	}
 
 	if *repo == "" || *issueNumber <= 0 {
-		fmt.Fprintf(os.Stderr, "用法: code-bee --repo <owner/repo> --issue <number>\n\n")
-		fmt.Fprintf(os.Stderr, "示例:\n")
-		fmt.Fprintf(os.Stderr, "  code-bee --repo owner/repo --issue 42\n")
-		os.Exit(1)
+		return usageError(stderr)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	fmt.Printf("🐝 code-bee %s\n", version.Version)
-	fmt.Printf("📦 仓库: %s | Issue: #%d\n\n", *repo, *issueNumber)
+	fmt.Fprintf(stdout, "🐝 code-bee %s\n", version.Version)
+	fmt.Fprintf(stdout, "📦 仓库: %s | Issue: #%d\n\n", *repo, *issueNumber)
 
 	cfg := config.New(*repo, *issueNumber)
-	service := pipeline.NewService(
-		platformgithub.NewClient(),
-		agent.New(),
-	)
+	service := serviceFactory()
 
-	fmt.Println("🚀 正在执行四阶段 harness：Issue 处理 -> 编码 -> 审查 -> Issue 提交...")
+	fmt.Fprintln(stdout, "🚀 正在执行四阶段 harness：Issue 处理 -> 编码 -> 审查 -> Issue 提交...")
 
 	result, err := service.Dispatch(ctx, cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\n❌ 执行失败: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "\n❌ 执行失败: %v\n", err)
+		return 1
 	}
 
+	return reportDispatchResult(result, stdout, stderr)
+}
+
+// reportDispatchResult 将调度结果映射为用户可见消息与退出码。
+//
+// 返回值:
+// - 0: 任务顺利完成
+// - 1: 阻塞、需要人工介入或智能体失败
+func reportDispatchResult(result *pipeline.Result, stdout, stderr io.Writer) int {
 	if result.Success && result.Completed {
-		fmt.Println("\n✅ reviewer 已明确 PASS，且最终 Issue 回复已提交，任务执行完成")
-		return
+		fmt.Fprintln(stdout, "\n✅ reviewer 已明确 PASS，且最终 Issue 回复已提交，任务执行完成")
+		return 0
 	}
 
 	if result.Success && result.Blocked {
-		fmt.Fprintf(os.Stderr, "\n⏸️ 流程已阻塞，需要补充信息或人工介入:\n%s\n", result.Output)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "\n⏸️ 流程已阻塞，需要补充信息或人工介入:\n%s\n", result.Output)
+		return 1
 	}
 
 	if result.Success {
 		if result.ManualRequired {
-			fmt.Fprintf(os.Stderr, "\n🧑‍🔧 自动循环已触达兜底阈值，需要人工介入:\n%s\n", result.Output)
-			os.Exit(1)
+			fmt.Fprintf(stderr, "\n🧑‍🔧 自动循环已触达兜底阈值，需要人工介入:\n%s\n", result.Output)
+			return 1
 		}
 
-		fmt.Fprintf(os.Stderr, "\n⏳ 自动循环结束但 reviewer 未 PASS:\n%s\n", result.Output)
-		os.Exit(1)
-	} else {
-		fmt.Fprintf(os.Stderr, "\n❌ 智能体返回失败:\n%s\n", result.Output)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "\n⏳ 自动循环结束但 reviewer 未 PASS:\n%s\n", result.Output)
+		return 1
 	}
+
+	fmt.Fprintf(stderr, "\n❌ 智能体返回失败:\n%s\n", result.Output)
+	return 1
 }

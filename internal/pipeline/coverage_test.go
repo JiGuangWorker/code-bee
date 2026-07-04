@@ -39,8 +39,8 @@ func TestArtifactSetRoundPaths(t *testing.T) {
 	}
 
 	gotPaths := map[string]string{
-		"CodingResultPath":    artifacts.CodingResultPath(2),
-		"ReviewResultPath":    artifacts.ReviewResultPath(2),
+		"CodingResultPath":    artifacts.CodingResultPathForRound(2),
+		"ReviewResultPath":    artifacts.ReviewResultPathForRound(2),
 		"LoopJudgeResultPath": artifacts.LoopJudgeResultPath(2),
 		"LoopHistoryPath":     artifacts.LoopHistoryPath(),
 	}

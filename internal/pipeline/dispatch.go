@@ -27,10 +27,15 @@ const (
 	maxIssuePostAttempts        = 2
 )
 
+// Runner 定义智能体执行器的抽象，用于解耦 Service 与具体的 agent.Runner 实现。
+type Runner interface {
+	Run(ctx context.Context, kind agent.TaskKind, task string) (*agent.RunResult, error)
+}
+
 // Service 负责串联平台技能包和四阶段调度流程。
 type Service struct {
 	platformClient platform.Client
-	runner         *agent.Runner
+	runner         Runner
 }
 
 // dispatchContext 统一收纳整个 harness 运行中会重复使用的上下文。
@@ -52,7 +57,7 @@ type dispatchContext struct {
 }
 
 // NewService 创建最小执行流水线服务。
-func NewService(platformClient platform.Client, runner *agent.Runner) *Service {
+func NewService(platformClient platform.Client, runner Runner) *Service {
 	return &Service{
 		platformClient: platformClient,
 		runner:         runner,
@@ -179,7 +184,18 @@ func (s *Service) runCodingReviewLoop(
 		consecutiveUnknowns int
 	)
 
-	for round := 1; round <= maxCodingReviewRounds; round++ {
+	maxRounds := maxCodingReviewRounds
+	if cfg.MaxCodingReviewRounds > 0 {
+		maxRounds = cfg.MaxCodingReviewRounds
+	}
+
+	history := &LoopHistory{
+		Repo:        cfg.Repo,
+		IssueNumber: cfg.IssueNumber,
+		MaxRounds:   maxRounds,
+	}
+
+	for round := 1; round <= maxRounds; round++ {
 		codingResult, codingOutput, codingErr := s.runCodingRound(
 			ctx,
 			cfg,
@@ -210,23 +226,116 @@ func (s *Service) runCodingReviewLoop(
 		}
 		lastOutput = reviewOutput
 
-		if reviewResult.Passed() {
-			return s.finishSuccessfulReview(ctx, cfg, dispatchCtx)
+		if err := appendAndSaveHistory(history, dispatchCtx.artifacts.LoopHistoryPath(), round, codingResult, reviewResult); err != nil {
+			return &Result{Success: false, Output: lastOutput}, err
 		}
 
-		if reviewResult.BlockedStatus() {
-			return &Result{
-				Success:        true,
-				Blocked:        true,
-				ManualRequired: true,
-				Output:         reviewOutput,
-			}, nil
+		if terminalResult, terminalErr, isTerminal := s.checkReviewTerminal(
+			ctx, cfg, dispatchCtx, reviewResult, reviewOutput,
+		); isTerminal {
+			return terminalResult, terminalErr
 		}
 
 		reviewerFeedback, consecutiveUnknowns = nextReviewerFeedback(reviewResult, consecutiveUnknowns)
+
+		judgeOutcome, judgeRan := s.runLoopJudgeIfNeeded(ctx, cfg, dispatchCtx, round, maxRounds, reviewerFeedback)
+		if judgeRan {
+			if judgeOutcome.result != nil {
+				return judgeOutcome.result, nil
+			}
+			lastOutput = judgeOutcome.output
+			reviewerFeedback = judgeOutcome.nextFeedback
+		}
 	}
 
 	return &Result{Success: true, ManualRequired: true, Output: lastOutput}, nil
+}
+
+// appendAndSaveHistory 将单轮结果追加到历史并持久化到磁盘。
+func appendAndSaveHistory(
+	history *LoopHistory,
+	historyFilePath string,
+	round int,
+	codingResult *CodingResult,
+	reviewResult *ReviewResult,
+) error {
+	if err := history.appendRound(round, codingResult, reviewResult); err != nil {
+		return fmt.Errorf("append history round %d: %w", round, err)
+	}
+	if err := saveLoopHistory(historyFilePath, history); err != nil {
+		return fmt.Errorf("save loop history round %d: %w", round, err)
+	}
+	return nil
+}
+
+// checkReviewTerminal 检查 review 结果是否处于终态（PASS 或 BLOCKED）。
+// 返回值:
+// - result: 终态结果（非 nil 时表示应立即返回）
+// - err: 终态对应的错误
+// - bool: 是否为终态
+func (s *Service) checkReviewTerminal(
+	ctx context.Context,
+	cfg *config.Config,
+	dispatchCtx dispatchContext,
+	reviewResult *ReviewResult,
+	reviewOutput string,
+) (*Result, error, bool) {
+	if reviewResult.Passed() {
+		result, err := s.finishSuccessfulReview(ctx, cfg, dispatchCtx)
+		return result, err, true
+	}
+	if reviewResult.BlockedStatus() {
+		return &Result{
+			Success:        true,
+			Blocked:        true,
+			ManualRequired: true,
+			Output:         reviewOutput,
+		}, nil, true
+	}
+	return nil, nil, false
+}
+
+// loopJudgeOutcome 收集价值评估员单次执行后的中间产物，便于主循环判断是否需要中断或调整反馈。
+type loopJudgeOutcome struct {
+	result       *Result
+	output       string
+	nextFeedback string
+}
+
+// runLoopJudgeIfNeeded 在满足触发条件时执行价值评估员，并返回其对外层循环的影响。
+//
+// 输入参数:
+// - reviewerFeedback: 当前累积的 reviewer 反馈，SHRINK_TASK 时会与之合并
+//
+// 返回值:
+// - loopJudgeOutcome: 评估结果，当 result 为 nil 时表示继续循环
+// - bool: 是否实际执行了价值评估员
+func (s *Service) runLoopJudgeIfNeeded(
+	ctx context.Context,
+	cfg *config.Config,
+	dispatchCtx dispatchContext,
+	round, maxRounds int,
+	reviewerFeedback string,
+) (loopJudgeOutcome, bool) {
+	if !shouldRunLoopJudge(cfg, round) {
+		return loopJudgeOutcome{}, false
+	}
+
+	judgeResult, judgeOutput, judgeErr := s.runLoopJudgeRound(ctx, cfg, dispatchCtx, round, maxRounds)
+	if judgeErr != nil {
+		return loopJudgeOutcome{result: &Result{Success: false, Output: judgeOutput}}, true
+	}
+
+	outcome := loopJudgeOutcome{output: judgeOutput, nextFeedback: reviewerFeedback}
+	switch judgeResult.Decision {
+	case loopJudgeDecisionStopManual:
+		outcome.result = &Result{Success: true, ManualRequired: true, Output: judgeOutput}
+	case loopJudgeDecisionStopBlocked:
+		outcome.result = &Result{Success: true, Blocked: true, ManualRequired: true, Output: judgeOutput}
+	case loopJudgeDecisionShrinkTask:
+		outcome.nextFeedback = buildLoopJudgeFeedback(judgeResult) + "\n\n" + reviewerFeedback
+	}
+	return outcome, true
 }
 
 // finishSuccessfulReview 在 reviewer 明确 PASS 后，调用 Issue 提交智能体提交最终完成评论。
@@ -421,6 +530,55 @@ func buildReviewerFeedback(reviewResult *ReviewResult) string {
 	)
 }
 
+// runLoopJudgeRound 执行单轮价值评估任务。
+func (s *Service) runLoopJudgeRound(
+	ctx context.Context,
+	cfg *config.Config,
+	dispatchCtx dispatchContext,
+	round int,
+	maxRounds int,
+) (*LoopJudgeResult, string, error) {
+	resultFilePath := dispatchCtx.artifacts.LoopJudgeResultPath(round)
+	if err := resetResultFile(resultFilePath); err != nil {
+		return nil, "", err
+	}
+
+	judgePrompt := buildLoopJudgePrompt(
+		cfg,
+		dispatchCtx.workerID,
+		dispatchCtx.issueURL,
+		dispatchCtx.platformName,
+		dispatchCtx.platformGuide,
+		round,
+		maxRounds,
+		resultFilePath,
+		dispatchCtx.artifacts.LoopHistoryPath(),
+	)
+
+	judgeRunResult, err := s.runner.Run(ctx, agent.TaskKindLoopJudge, judgePrompt)
+	if err != nil {
+		return nil, safeOutput(judgeRunResult), fmt.Errorf("loop judge round %d failed: %w", round, err)
+	}
+
+	judgeResult, loadErr := loadLoopJudgeResult(resultFilePath)
+	if loadErr != nil {
+		return nil, judgeRunResult.Output, fmt.Errorf("load loop judge round %d result: %w", round, loadErr)
+	}
+
+	return judgeResult, judgeRunResult.Output, nil
+}
+
+// buildLoopJudgeFeedback 将价值评估结果转成下一轮 coder 的输入摘要。
+func buildLoopJudgeFeedback(judgeResult *LoopJudgeResult) string {
+	return fmt.Sprintf(
+		"价值评估结论:\n决策: %s\n原因: %s\n证据: %s\n下一步: %s",
+		judgeResult.Decision,
+		judgeResult.Reason,
+		judgeResult.Evidence,
+		judgeResult.NextAction,
+	)
+}
+
 // resetResultFile 在每轮调用前删除旧的结果文件，防止读取到上一次残留结果。
 func resetResultFile(filePath string) error {
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
@@ -451,4 +609,16 @@ func safeOutput(result *agent.RunResult) string {
 	}
 
 	return result.Output
+}
+
+// shouldRunLoopJudge 判断当前轮次是否应触发价值评估员。
+//
+// 规则:
+// - 如果 LoopJudgeStartRound <= 0，始终触发
+// - 否则，当 round >= LoopJudgeStartRound 时触发
+func shouldRunLoopJudge(cfg *config.Config, round int) bool {
+	if cfg.LoopJudgeStartRound <= 0 {
+		return true
+	}
+	return round >= cfg.LoopJudgeStartRound
 }

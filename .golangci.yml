@@ -38,7 +38,13 @@ linters-settings:
     statements: 40
 
   mnd:
-    ignored-numbers: "0,1,2,10,100,1000"
+    ignored-numbers:
+      - "0"
+      - "1"
+      - "2"
+      - "10"
+      - "100"
+      - "1000"
 
   gocyclo:
     min-complexity: 15
