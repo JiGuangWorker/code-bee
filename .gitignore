@@ -17,3 +17,6 @@ bin/
 
 # Runtime artifacts
 .code-bee/
+
+# Build output
+worker
