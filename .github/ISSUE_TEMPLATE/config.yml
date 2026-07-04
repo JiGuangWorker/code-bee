@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Issue 编写说明
+    url: https://github.com/JiGuangWorker/code-bee/issues/2
+    about: 新建 Issue 前，请先阅读关于验收标准、接单回执与开发门禁的说明。
