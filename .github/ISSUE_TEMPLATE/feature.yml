@@ -1,0 +1,81 @@
+name: 极简功能
+description: 用于创建一个最小可执行的功能需求 Issue，要求带明确验收标准。
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请保持一个 Issue 只描述一个极简功能。
+
+        要求：
+        - 尽量给出清晰的接口契约或 Mock（如适用）
+        - 必须写明验收标准
+        - 验收标准建议按 Given / When / Then 表达
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景与目标
+      description: 说明为什么要做这个功能，以及本次只解决什么问题。
+      placeholder: |
+        例如：
+        当前用户无法通过账号密码登录系统。
+        本次只实现基础登录能力，不包含注册、找回密码、第三方登录。
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: 接口契约 / Mock（如适用）
+      description: 如果功能依赖接口、事件或数据结构，请在这里写清输入输出契约。
+      placeholder: |
+        例如：
+        POST /api/login
+        request: { username: string, password: string }
+        response: { token: string, user: { id: string, name: string } }
+  - type: textarea
+    id: scope
+    attributes:
+      label: 实现范围
+      description: 明确本次包含什么，不包含什么，避免范围漂移。
+      placeholder: |
+        包含：
+        - 登录表单提交
+        - 登录成功后的状态持久化
+
+        不包含：
+        - 注册
+        - 忘记密码
+        - 单点登录
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 必填。请写成可以直接验证的验收单元，建议使用 Given / When / Then。
+      placeholder: |
+        Given 用户已进入登录页
+        When 输入正确的用户名和密码并点击登录
+        Then 调用登录接口成功，页面跳转到首页，并保存登录态
+
+        Given 用户未输入密码
+        When 点击登录
+        Then 不发起请求，并提示“请输入密码”
+
+        Given 用户输入错误账号密码
+        When 点击登录
+        Then 显示错误提示，不跳转页面
+    validations:
+      required: true
+  - type: textarea
+    id: qa
+    attributes:
+      label: QA / 测试要求（可选）
+      description: 如有稳定性、异常覆盖、回归范围、重试、幂等、容错等要求，请明确写出。
+      placeholder: |
+        例如：
+        - 需要覆盖网络超时场景
+        - 需要验证重复点击登录按钮不会重复提交
+        - 需要回归现有登录态读取逻辑

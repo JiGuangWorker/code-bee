@@ -1,0 +1,82 @@
+name: Bug 修复
+description: 用于创建一个可复现、可验证的缺陷修复 Issue，要求带明确验收标准。
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请将问题写清楚到可以直接形成覆盖性测试单元。
+
+        要求：
+        - 写明问题现象
+        - 写明复现条件
+        - 写明期望行为
+        - 必须填写修复后的验收标准
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 问题现象
+      description: 当前看到的错误表现是什么。
+      placeholder: |
+        例如：
+        用户输入正确账号密码后点击登录，按钮持续 loading，页面无跳转。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现条件与步骤
+      description: 请写清楚在什么前置条件下、通过什么步骤可以稳定复现。
+      placeholder: |
+        例如：
+        1. 打开登录页
+        2. 输入正确账号密码
+        3. 点击登录
+        4. 接口返回 200，但前端未处理 token
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 正确结果应该是什么，修复后要恢复什么行为。
+      placeholder: |
+        例如：
+        登录成功后应保存 token，关闭 loading，并跳转到首页。
+    validations:
+      required: true
+  - type: textarea
+    id: root_context
+    attributes:
+      label: 已知上下文 / 相关线索（可选）
+      description: 如果已经知道关联接口、日志、报错、怀疑根因，可写在这里。
+      placeholder: |
+        例如：
+        - 登录接口返回字段名从 accessToken 改成了 token
+        - 控制台报错：cannot read property ...
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 必填。请写成修复验证单元与回归单元。
+      placeholder: |
+        修复验证：
+        - 正确账号密码登录后成功跳转首页
+        - token 被正确保存
+
+        覆盖验证：
+        - 错误账号密码时提示错误，不跳转
+        - 网络异常时 loading 能恢复，页面不会卡死
+    validations:
+      required: true
+  - type: textarea
+    id: qa
+    attributes:
+      label: QA / 测试要求（可选）
+      description: 如需特别关注稳定性、回归范围、观测项，请明确写出。
+      placeholder: |
+        例如：
+        - 回归登录态续期逻辑
+        - 覆盖接口超时与重复点击场景

@@ -1,0 +1,67 @@
+name: 改进计划
+description: 用于创建一个面向体验、流程或稳定性的改进 Issue，要求带明确验收标准。
+title: "[Improvement] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请保持一个 Issue 只描述一个明确的改进点。
+
+        要求：
+        - 写清当前痛点
+        - 写清改进后的流程或结果
+        - 必须填写验收标准
+  - type: textarea
+    id: pain
+    attributes:
+      label: 当前痛点
+      description: 说明现在的问题、低效点或不稳定点是什么。
+      placeholder: |
+        例如：
+        登录失败提示只有“请求失败”，用户无法区分是密码错误还是网络异常。
+    validations:
+      required: true
+  - type: textarea
+    id: current_flow
+    attributes:
+      label: 当前流程 / 当前行为
+      description: 写清现在是怎么工作的，哪里不合理。
+      placeholder: |
+        例如：
+        用户登录失败后统一显示通用错误文案，且按钮状态恢复不稳定。
+    validations:
+      required: true
+  - type: textarea
+    id: target_flow
+    attributes:
+      label: 改进后的流程 / 目标行为
+      description: 说明希望改成什么样，用户或系统最终应看到什么变化。
+      placeholder: |
+        例如：
+        - 密码错误时显示明确提示
+        - 网络异常时提示稍后重试
+        - 按钮状态始终可恢复
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 必填。请写成可以直接验证改进是否成立的验收单元。
+      placeholder: |
+        - 登录失败且为密码错误时，展示“账号或密码错误”
+        - 登录失败且为网络异常时，展示“网络异常，请稍后重试”
+        - 任一失败场景下，按钮 loading 会被正确关闭
+    validations:
+      required: true
+  - type: textarea
+    id: qa
+    attributes:
+      label: QA / 测试要求（可选）
+      description: 如需额外关注稳定性、异常覆盖、回归范围，请写在这里。
+      placeholder: |
+        例如：
+        - 回归原有登录成功流程
+        - 覆盖接口返回不同错误码的文案映射

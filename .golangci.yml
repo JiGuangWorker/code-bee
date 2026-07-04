@@ -1,0 +1,56 @@
+# 极光 AI · Go 编码规范检查配置
+# 用法: golangci-lint run -c .golangci.yml
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - goimports
+    - revive
+    - funlen
+    - mnd
+    - gocyclo
+    - govet
+    - staticcheck
+    - unused
+    - gosec
+
+linters-settings:
+  errcheck:
+    check-blank: true
+    check-type-assertions: false
+
+  goimports:
+    local-prefixes: github.com/JiGuangWorker/code-bee
+
+  revive:
+    rules:
+      - name: context-as-argument
+      - name: exported
+        severity: warning
+      - name: empty-block
+
+  funlen:
+    lines: 80
+    statements: 40
+
+  mnd:
+    ignored-numbers: "0,1,2,10,100,1000"
+
+  gocyclo:
+    min-complexity: 15
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - funlen
+        - mnd
+        - gocyclo
+
+  max-issues-per-linter: 0
+  max-same-issues: 0

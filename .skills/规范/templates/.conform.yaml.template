@@ -1,0 +1,125 @@
+# 极光 AI · 项目目录结构声明式校验配置
+# 用法: conform enforce
+# 对应规范: 项目目录结构规范.md
+#
+# 此文件是项目模板，各项目拷贝到根目录后使用。
+
+# ============================================================
+# 顶层结构约束
+# ============================================================
+structure:
+  # 必须存在的顶级目录
+  directories:
+    required:
+      - backend
+      - frontend
+      - docs
+      - deploy
+
+  # 必须存在的顶级文件
+  files:
+    required:
+      - README.md
+      - Makefile
+
+# ============================================================
+# Go 后端目录约束
+# ============================================================
+backend:
+  directories:
+    required:
+      - cmd/server
+      - internal/module
+      - internal/compositor
+      - internal/middleware
+      - internal/router
+      - internal/config
+      - pkg
+      - migrations
+      - config
+  files:
+    required:
+      - cmd/server/main.go
+      - go.mod
+      - config/config.yaml
+
+  # 模块目录内部约束
+  module:
+    directories:
+      required:
+        - handler
+        - service
+        - repository
+        - model
+    root_file:
+      only: wire.go
+
+  # 子目录包名校验
+  package_rule:
+    handler: handler
+    service: service
+    repository: repository
+    model: model
+
+# ============================================================
+# React 前端目录约束
+# ============================================================
+frontend:
+  directories:
+    required:
+      - packages
+  files:
+    required:
+      - package.json
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+
+  # packages/ 下必须包含的包
+  packages:
+    required:
+      - app
+      - shared
+
+    # app 入口包约束
+    app:
+      directories:
+        required:
+          - src/router
+          - src/store
+          - src/assets
+          - src/api
+      files:
+        required:
+          - src/App.tsx
+          - src/main.tsx
+          - vite.config.ts
+          - index.html
+          - tsconfig.json
+
+    # shared 共享包约束
+    shared:
+      directories:
+        required:
+          - src/components
+          - src/hooks
+          - src/utils
+          - src/types
+
+    # 领域包通用约束
+    domain:
+      directories:
+        required:
+          - src/pages
+          - src/components
+          - src/api
+          - src/hooks
+          - src/types
+
+# ============================================================
+# deploy 部署目录约束
+# ============================================================
+deploy:
+  description: |
+    所有自动化部署资产统一存放于此。
+    包括 Dockerfile、K8s YAML、Terraform 文件及部署辅助脚本。
+    CI 流水线定义按平台要求放置，但部署逻辑收敛至本目录。
