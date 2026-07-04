@@ -226,24 +226,14 @@ func (s *Service) runCodingReviewLoop(
 		}
 		lastOutput = reviewOutput
 
-		if err := history.appendRound(round, codingResult, reviewResult); err != nil {
-			return &Result{Success: false, Output: lastOutput}, fmt.Errorf("append history round %d: %w", round, err)
-		}
-		if err := saveLoopHistory(dispatchCtx.artifacts.LoopHistoryPath(), history); err != nil {
-			return &Result{Success: false, Output: lastOutput}, fmt.Errorf("save loop history round %d: %w", round, err)
+		if err := appendAndSaveHistory(history, dispatchCtx.artifacts.LoopHistoryPath(), round, codingResult, reviewResult); err != nil {
+			return &Result{Success: false, Output: lastOutput}, err
 		}
 
-		if reviewResult.Passed() {
-			return s.finishSuccessfulReview(ctx, cfg, dispatchCtx)
-		}
-
-		if reviewResult.BlockedStatus() {
-			return &Result{
-				Success:        true,
-				Blocked:        true,
-				ManualRequired: true,
-				Output:         reviewOutput,
-			}, nil
+		if terminalResult, terminalErr, isTerminal := s.checkReviewTerminal(
+			ctx, cfg, dispatchCtx, reviewResult, reviewOutput,
+		); isTerminal {
+			return terminalResult, terminalErr
 		}
 
 		reviewerFeedback, consecutiveUnknowns = nextReviewerFeedback(reviewResult, consecutiveUnknowns)
@@ -259,6 +249,50 @@ func (s *Service) runCodingReviewLoop(
 	}
 
 	return &Result{Success: true, ManualRequired: true, Output: lastOutput}, nil
+}
+
+// appendAndSaveHistory 将单轮结果追加到历史并持久化到磁盘。
+func appendAndSaveHistory(
+	history *LoopHistory,
+	historyFilePath string,
+	round int,
+	codingResult *CodingResult,
+	reviewResult *ReviewResult,
+) error {
+	if err := history.appendRound(round, codingResult, reviewResult); err != nil {
+		return fmt.Errorf("append history round %d: %w", round, err)
+	}
+	if err := saveLoopHistory(historyFilePath, history); err != nil {
+		return fmt.Errorf("save loop history round %d: %w", round, err)
+	}
+	return nil
+}
+
+// checkReviewTerminal 检查 review 结果是否处于终态（PASS 或 BLOCKED）。
+// 返回值:
+// - result: 终态结果（非 nil 时表示应立即返回）
+// - err: 终态对应的错误
+// - bool: 是否为终态
+func (s *Service) checkReviewTerminal(
+	ctx context.Context,
+	cfg *config.Config,
+	dispatchCtx dispatchContext,
+	reviewResult *ReviewResult,
+	reviewOutput string,
+) (*Result, error, bool) {
+	if reviewResult.Passed() {
+		result, err := s.finishSuccessfulReview(ctx, cfg, dispatchCtx)
+		return result, err, true
+	}
+	if reviewResult.BlockedStatus() {
+		return &Result{
+			Success:        true,
+			Blocked:        true,
+			ManualRequired: true,
+			Output:         reviewOutput,
+		}, nil, true
+	}
+	return nil, nil, false
 }
 
 // loopJudgeOutcome 收集价值评估员单次执行后的中间产物，便于主循环判断是否需要中断或调整反馈。
