@@ -78,41 +78,13 @@ func (e *LoopExecutor) Execute(ctx context.Context, step schema.PipelineStep, ec
 		if err != nil {
 			return lastResult, err
 		}
-		// executeBody 返回的终端结果需要立即退出
 		if lastResult != nil && (lastResult.Completed || lastResult.Blocked) {
 			return lastResult, nil
 		}
 
-		// 4. 维护 ConsecutiveUnknown
-		if lastResult != nil && lastResult.Status == "UNKNOWN" {
-			loopState.ConsecutiveUnknown++
-		} else {
-			loopState.ConsecutiveUnknown = 0
-		}
-		if loopState.ConsecutiveUnknown >= loopState.MaxConsecutiveUnknown {
-			return &StepResult{
-				Success:        true,
-				ManualRequired: true,
-				StageName:      "loop",
-				Output:         fmt.Sprintf("loop %s: max consecutive unknown (%d) reached", loop.ID, loopState.MaxConsecutiveUnknown),
-			}, nil
-		}
-
-		// 5. 执行 judge
-		judgeResult, err := e.handleJudge(ctx, ec, loop, loopState, lastResult, round)
-		if err != nil {
-			return judgeResult, err
-		}
-		if judgeResult != nil {
-			return judgeResult, nil
-		}
-
-		// 6. 更新 LastFeedback
-		if lastResult != nil {
-			fb := buildFeedbackFromResult(lastResult)
-			if fb != "" {
-				loopState.LastFeedback = fb
-			}
+		// 4. 维护并检查终止条件
+		if result, exit := e.postRound(ctx, ec, loop, loopState, lastResult, round); exit {
+			return result, nil
 		}
 	}
 
@@ -123,6 +95,43 @@ func (e *LoopExecutor) Execute(ctx context.Context, step schema.PipelineStep, ec
 		StageName:      "loop",
 		Output:         fmt.Sprintf("loop %s: max iterations (%d) reached", loop.ID, loopState.MaxIterations),
 	}, nil
+}
+
+// postRound 执行每轮 body 后的维护工作：ConsecutiveUnknown、judge、LastFeedback。
+// 返回 (result, true) 表示需要退出循环。
+func (e *LoopExecutor) postRound(ctx context.Context, ec *ExecutionContext, loop *schema.Loop, loopState *LoopState, lastResult *StepResult, round int) (*StepResult, bool) {
+	// ConsecutiveUnknown
+	if lastResult != nil && lastResult.Status == "UNKNOWN" {
+		loopState.ConsecutiveUnknown++
+	} else {
+		loopState.ConsecutiveUnknown = 0
+	}
+	if loopState.ConsecutiveUnknown >= loopState.MaxConsecutiveUnknown {
+		return &StepResult{
+			Success:        true,
+			ManualRequired: true,
+			StageName:      "loop",
+			Output:         fmt.Sprintf("loop %s: max consecutive unknown (%d) reached", loop.ID, loopState.MaxConsecutiveUnknown),
+		}, true
+	}
+
+	// judge
+	judgeResult, err := e.handleJudge(ctx, ec, loop, loopState, lastResult, round)
+	if err != nil {
+		return judgeResult, true
+	}
+	if judgeResult != nil {
+		return judgeResult, true
+	}
+
+	// LastFeedback
+	if lastResult != nil {
+		fb := buildFeedbackFromResult(lastResult)
+		if fb != "" {
+			loopState.LastFeedback = fb
+		}
+	}
+	return nil, false
 }
 
 // executeBody 执行 loop body 中的所有 step，处理 blocked 和 exit_when。
