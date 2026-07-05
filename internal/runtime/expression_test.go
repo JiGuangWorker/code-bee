@@ -10,9 +10,9 @@ func newTestEC() *ExecutionContext {
 	ec := NewExecutionContext(nil, nil, PlatformContext{}, nil)
 	ec.SetResult("review", &StepResult{
 		Data: map[string]any{
-			"status":      "PASS",
-			"summary":     "all good",
-			"tags":        []any{"bug", "critical"},
+			"status":  "PASS",
+			"summary": "all good",
+			"tags":    []any{"bug", "critical"},
 			"check_result": map[string]any{
 				"passed":  true,
 				"count":   42,

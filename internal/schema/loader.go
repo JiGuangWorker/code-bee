@@ -105,9 +105,9 @@ func (w *Workflow) FindTool(ref string) *Tool {
 
 // toolRegistry 是 name→Tool 的索引，O(1) 查找。
 type toolRegistry struct {
-	byName    map[string]*Tool
-	byAlias   map[string]*Tool
-	allNames  map[string]bool
+	byName   map[string]*Tool
+	byAlias  map[string]*Tool
+	allNames map[string]bool
 }
 
 // buildToolRegistry 构建 tool 索引并检测 name/alias 冲突。

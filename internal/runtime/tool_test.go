@@ -334,7 +334,7 @@ func TestToolRegistry_BuildAndResolve(t *testing.T) {
 	}
 
 	// 查 command
-	tool, ok = registry.Resolve("lint")
+	_, ok = registry.Resolve("lint")
 	if !ok {
 		t.Fatal("expected to resolve lint")
 	}

@@ -393,7 +393,7 @@ func TestMapJudgeDecision(t *testing.T) {
 
 	// 自定义映射
 	custom := map[string]string{
-		"CONTINUE":   "exit",    // 覆盖默认
+		"CONTINUE":    "exit",     // 覆盖默认
 		"STOP_MANUAL": "continue", // 覆盖默认
 	}
 	if got := mapJudgeDecision("CONTINUE", custom); got != "exit" {
