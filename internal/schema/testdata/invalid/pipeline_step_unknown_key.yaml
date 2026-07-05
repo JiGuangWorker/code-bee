@@ -1,0 +1,12 @@
+version: "1"
+name: unknown-pipeline-step
+description: pipeline 步骤既不是 stage 也不是 parallel 也不是 loop
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - branch:
+      name: coding
+      tool: coder

@@ -1,0 +1,92 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: https://codebee.dev/schemas/v1/tool.json
+title: ToolDefinition
+description: 定义一个可调度的工具。工具是 Agent 与 Command 的统一抽象——Agent 本质上也是工具。
+type: object
+required:
+- name
+- type
+additionalProperties: false
+properties:
+  name:
+    type: string
+    pattern: ^[a-z][a-z0-9-]{1,31}$
+    description: 工具唯一标识，pipeline 中通过此名引用。必须英文小写开头，仅含 a-z 0-9 -
+  display_name:
+    type: string
+    minLength: 1
+    maxLength: 32
+    description: 类人展示名称，如「代码审核员」「开发者」。用于 Issue 评论、日志等人类可读场景。
+  aliases:
+    type: array
+    items:
+      type: string
+      minLength: 1
+      maxLength: 32
+    uniqueItems: true
+    description: '@mention 别名列表。用户在 Issue 中 @任一别名都可触发本工具，支持中文类人名称如「开发者」「代码审核员」。'
+  type:
+    type: string
+    enum:
+    - agent
+    - command
+    - function
+    description: agent=AI 智能体, command=shell 命令, function=内置函数
+  skill:
+    type: string
+    minLength: 1
+    description: type=agent 时必填，对应 .skills/ 下的相对路径
+  prompt_template:
+    type: string
+    minLength: 1
+    description: type=agent 时必填，引用的 prompt 模板 ID
+  run:
+    type: string
+    minLength: 1
+    description: type=command 时必填，shell 命令
+  function:
+    type: string
+    minLength: 1
+    description: type=function 时必填，内置函数名
+  timeout:
+    type: string
+    pattern: ^[0-9]+(s|m|h)$
+    default: 60s
+    description: 超时时间，格式如 60s / 5m / 1h
+  env:
+    type: object
+    additionalProperties:
+      type: string
+    description: 环境变量
+  description:
+    type: string
+    description: 工具说明，用于文档生成
+allOf:
+- if:
+    properties:
+      type:
+        const: agent
+    required:
+    - type
+  then:
+    required:
+    - skill
+    - prompt_template
+- if:
+    properties:
+      type:
+        const: command
+    required:
+    - type
+  then:
+    required:
+    - run
+- if:
+    properties:
+      type:
+        const: function
+    required:
+    - type
+  then:
+    required:
+    - function

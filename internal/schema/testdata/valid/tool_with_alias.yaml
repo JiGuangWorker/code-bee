@@ -1,0 +1,28 @@
+version: "1"
+name: tool-with-alias
+description: 验证工具别名（含中文类人名称）能被接受
+tools:
+  - name: reviewer
+    display_name: 代码审核员
+    aliases:
+      - QA负责人
+      - 审查员
+      - reviewer-bot
+    type: agent
+    skill: "QA负责人Skill/SKILL.md"
+    prompt_template: review
+  - name: coder
+    display_name: 开发者
+    aliases:
+      - 开发
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: coding
+      tool: coder
+  - stage:
+      name: review
+      tool: reviewer
+      input_from: coding

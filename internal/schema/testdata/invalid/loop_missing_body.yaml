@@ -1,0 +1,12 @@
+version: "1"
+name: loop-missing-body
+description: loop 缺少必填的 body 字段
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - loop:
+      id: empty-loop
+      max_iterations: 3

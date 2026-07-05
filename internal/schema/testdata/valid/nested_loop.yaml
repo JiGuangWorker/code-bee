@@ -1,0 +1,35 @@
+version: "1"
+name: nested-loop
+description: 验证 loop 内嵌套 parallel
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+  - name: reviewer
+    type: agent
+    skill: "QA负责人Skill/SKILL.md"
+    prompt_template: review
+  - name: lint
+    type: command
+    run: "golangci-lint run ./..."
+pipeline:
+  - loop:
+      id: outer
+      max_iterations: 3
+      exit_when:
+        - stage: review
+          field: status
+          operator: equals
+          value: PASS
+      body:
+        - stage:
+            name: coding
+            tool: coder
+        - parallel:
+            - stage:
+                name: review
+                tool: reviewer
+            - stage:
+                name: lint
+                tool: lint

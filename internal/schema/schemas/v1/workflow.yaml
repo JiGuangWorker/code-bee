@@ -1,0 +1,51 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: https://codebee.dev/schemas/v1/workflow.json
+title: Workflow
+description: 顶层 Workflow 配置。声明工具集与流水线编排，覆盖现有硬编码的 BuiltinAgents + 四阶段管线。
+type: object
+required:
+- version
+- name
+- tools
+- pipeline
+additionalProperties: false
+properties:
+  version:
+    type: string
+    enum:
+    - '1'
+    description: Schema 版本，用于未来兼容性判断
+  name:
+    type: string
+    minLength: 1
+    maxLength: 64
+    description: workflow 名称
+  description:
+    type: string
+    description: workflow 说明
+  tools:
+    type: array
+    items:
+      $ref: https://codebee.dev/schemas/v1/tool.json
+    minItems: 1
+    description: 工具集，pipeline 中所有 tool 引用都必须在此声明
+  pipeline:
+    type: array
+    items:
+      $ref: https://codebee.dev/schemas/v1/pipeline_step.json
+    minItems: 1
+    description: 流水线步骤序列
+  defaults:
+    type: object
+    additionalProperties: false
+    properties:
+      timeout:
+        type: string
+        pattern: ^[0-9]+(s|m|h)$
+      on_blocked:
+        type: string
+        enum:
+        - stop
+        - skip
+        - continue
+    description: 全局默认值，stage 未显式声明时继承

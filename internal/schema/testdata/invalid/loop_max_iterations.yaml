@@ -1,0 +1,16 @@
+version: "1"
+name: loop-max-iterations
+description: max_iterations 超过上限 20
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - loop:
+      id: bad-loop
+      max_iterations: 100
+      body:
+        - stage:
+            name: coding
+            tool: coder

@@ -1,0 +1,13 @@
+version: "1"
+name: parallel-single
+description: "parallel 块内只有 1 个步骤，违反 minItems: 2"
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - parallel:
+      - stage:
+          name: coding
+          tool: coder

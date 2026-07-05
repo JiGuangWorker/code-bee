@@ -1,0 +1,12 @@
+version: "2"
+name: wrong-version
+description: version 字段不是合法枚举值 "1"
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: coding
+      tool: coder

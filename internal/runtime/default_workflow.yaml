@@ -1,0 +1,138 @@
+# code-bee 默认工作流配置。
+#
+# 本文件通过 go:embed 内置到二进制中，对应原 dispatch.go 硬编码的四阶段 harness：
+#   1. issue-handling: 读取 Issue 并判断接单/阻塞
+#   2. issue-post-intake / issue-post-blocked: 接单/阻塞评论由专门的提交智能体发布
+#   3. coding-review loop: 编码 -> 审查 -> （PASS 时）完成评论提交
+#   4. loop-judge: 价值评估员，判断循环是否还有继续价值
+#
+# 用户可通过 --workflow <path> 加载自定义 YAML 覆盖本配置。
+#
+# 开发维护: AI Assistant
+# 创建时间: 2026-07-05
+
+version: "1"
+name: code-bee-default
+description: code-bee 默认编码-审查循环工作流
+
+tools:
+  - name: issue-handling
+    type: agent
+    skill: 读取 Issue 并判断接单/阻塞
+    prompt_template: issue-handling
+    display_name: Issue 处理智能体
+    aliases:
+      - 接单员
+    description: 读取目标 Issue，判断 READY/BLOCKED，把结构化结果写入文件
+
+  - name: coder
+    type: agent
+    skill: 编码实现
+    prompt_template: coding
+    display_name: 开发者
+    aliases:
+      - 开发者
+    description: 按验收标准编码实现，把结构化结果写入文件
+
+  - name: reviewer
+    type: agent
+    skill: 代码审查
+    prompt_template: review
+    display_name: QA负责人
+    aliases:
+      - QA负责人
+      - 代码审核员
+    description: 审查编码结果，把 PASS/FAIL/UNKNOWN/BLOCKED 写入文件
+
+  - name: issue-post
+    type: agent
+    skill: 校验结果并提交 Issue 评论
+    prompt_template: issue-post
+    display_name: 产品经理
+    aliases:
+      - 产品经理
+    description: 校验上游结果文件并提交 Issue 评论，REJECTED 时返回修正反馈
+
+  - name: loop-judge
+    type: agent
+    skill: 价值评估
+    prompt_template: loop-judge
+    display_name: 技术负责人
+    aliases:
+      - 技术负责人
+    description: 评估 coder-reviewer loop 是否还有继续价值
+
+pipeline:
+  # 第一步：读取 Issue 并判断接单/阻塞
+  - stage:
+      name: issue-handling
+      tool: issue-handling
+      output: issue_intake_result.json
+
+  # 第二步（READY 时）：提交接单评论
+  - stage:
+      name: issue-post-intake
+      tool: issue-post
+      input_from: issue-handling
+      args:
+        purpose: intake
+        source_stage: issue-handling
+      when:
+        stage: issue-handling
+        field: status
+        operator: equals
+        value: READY
+
+  # 注: issue-handling 返回 BLOCKED 时，Engine 会立即终止（返回 Blocked 结果），
+  # 不会进入下面的 loop。阻塞评论的提交目前由 issue-handling 智能体在
+  # comment_body 中准备好，由上层调用方决定如何发布。后续可通过增强 Engine
+  # 支持 on_blocked: continue 后再加回 issue-post-blocked 阶段。
+
+  # 第三步：coder-reviewer 外层循环
+  - loop:
+      id: coding-review
+      max_iterations: 3
+      max_consecutive_unknown: 2
+      exit_when:
+        - stage: issue-post-completion
+          field: status
+          operator: equals
+          value: POSTED
+      body:
+        # 编码阶段
+        - stage:
+            name: coding
+            tool: coder
+            output: coding_result.json
+            input_from: issue-handling
+
+        # 审查阶段
+        - stage:
+            name: review
+            tool: reviewer
+            output: review_result.json
+            input_from: coding
+
+        # review PASS 时提交完成评论
+        - stage:
+            name: issue-post-completion
+            tool: issue-post
+            input_from: review
+            args:
+              purpose: completion
+              source_stage: review
+            when:
+              stage: review
+              field: status
+              operator: equals
+              value: PASS
+
+      # 价值评估员
+      judge:
+        tool: loop-judge
+        start_round: 1
+        on_decision:
+          STOP_MANUAL: exit
+          STOP_BLOCKED: exit
+          SHRINK_TASK: continue
+          CONTINUE: continue
