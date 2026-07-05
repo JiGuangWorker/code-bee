@@ -178,3 +178,65 @@ type fakeDispatchService struct {
 func (f fakeDispatchService) Dispatch(context.Context, *config.Config) (*pipeline.Result, error) {
 	return f.result, f.err
 }
+
+// TestParseExtraFlags 验证 --workflow / --prompts-dir 在各种参数顺序下都能被解析到。
+//
+// 回归保护: 早期实现只注册单个 flag，导致 Go flag 包遇到未注册的 --repo 时
+// 立即停止解析，排在 --repo 之后的 --workflow / --prompts-dir 永远解析不到。
+func TestParseExtraFlags(t *testing.T) {
+	cases := []struct {
+		name        string
+		args        []string
+		wantWorkflow string
+		wantPrompts  string
+	}{
+		{
+			name:         "both flags after repo and issue",
+			args:         []string{"--repo", "owner/repo", "--issue", "42", "--workflow", "/tmp/wf.yaml", "--prompts-dir", "/tmp/prompts"},
+			wantWorkflow: "/tmp/wf.yaml",
+			wantPrompts:  "/tmp/prompts",
+		},
+		{
+			name:         "workflow only after repo",
+			args:         []string{"--repo", "owner/repo", "--issue", "42", "--workflow", "/tmp/wf.yaml"},
+			wantWorkflow: "/tmp/wf.yaml",
+			wantPrompts:  "",
+		},
+		{
+			name:         "prompts-dir only after repo",
+			args:         []string{"--repo", "owner/repo", "--issue", "42", "--prompts-dir", "/tmp/prompts"},
+			wantWorkflow: "",
+			wantPrompts:  "/tmp/prompts",
+		},
+		{
+			name:         "both flags before repo",
+			args:         []string{"--workflow", "/tmp/wf.yaml", "--prompts-dir", "/tmp/prompts", "--repo", "owner/repo", "--issue", "42"},
+			wantWorkflow: "/tmp/wf.yaml",
+			wantPrompts:  "/tmp/prompts",
+		},
+		{
+			name:         "no extra flags",
+			args:         []string{"--repo", "owner/repo", "--issue", "42"},
+			wantWorkflow: "",
+			wantPrompts:  "",
+		},
+		{
+			name:         "flags interspersed",
+			args:         []string{"--workflow", "/tmp/wf.yaml", "--repo", "owner/repo", "--prompts-dir", "/tmp/prompts", "--issue", "42"},
+			wantWorkflow: "/tmp/wf.yaml",
+			wantPrompts:  "/tmp/prompts",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotWorkflow, gotPrompts := parseExtraFlags(tc.args)
+			if gotWorkflow != tc.wantWorkflow {
+				t.Errorf("workflow = %q, want %q", gotWorkflow, tc.wantWorkflow)
+			}
+			if gotPrompts != tc.wantPrompts {
+				t.Errorf("promptsDir = %q, want %q", gotPrompts, tc.wantPrompts)
+			}
+		})
+	}
+}

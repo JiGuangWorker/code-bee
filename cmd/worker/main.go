@@ -53,8 +53,7 @@ func main() {
 // workflowPath 为空时使用内置默认 workflow。
 // promptsDir 为空时只用内置 prompt 模板。
 func buildService(args []string) (*pipeline.Service, error) {
-	workflowPath := parseWorkflowFlag(args)
-	promptsDir := parsePromptsDirFlag(args)
+	workflowPath, promptsDir := parseExtraFlags(args)
 
 	wf, err := loadWorkflow(workflowPath)
 	if err != nil {
@@ -79,26 +78,25 @@ func buildService(args []string) (*pipeline.Service, error) {
 	return service, nil
 }
 
-// parseWorkflowFlag 从参数中解析 --workflow flag，不解析其他 flag。
+// parseExtraFlags 从参数中解析 --workflow 和 --prompts-dir 两个 flag。
 //
-// 单独解析是为了避免与 runCLI 的 flag.Parse 冲突（仅提取 workflow 路径）。
-func parseWorkflowFlag(args []string) string {
-	fs := flag.NewFlagSet("workflow-probe", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	workflowPath := fs.String("workflow", "", "workflow 配置文件路径（留空则使用内置默认）")
-	_ = fs.Parse(args)
-	return *workflowPath
-}
-
-// parsePromptsDirFlag 从参数中解析 --prompts-dir flag，不解析其他 flag。
+// 单独解析（而非复用 runCLI 的 FlagSet）是因为 buildService 在 factory() 调用时
+// 执行，而 factory 在 runCLI 的 fs.Parse 之后才被调用，无法拿到已解析的值。
 //
-// 单独解析是为了避免与 runCLI 的 flag.Parse 冲突（仅提取 prompts 目录路径）。
-func parsePromptsDirFlag(args []string) string {
-	fs := flag.NewFlagSet("prompts-dir-probe", flag.ContinueOnError)
+// 必须注册所有 flag（--repo/--issue/--version 等），否则 Go flag 包遇到
+// 未注册的 flag 会立即停止解析，导致排在 --repo 之后的 --workflow/--prompts-dir
+// 永远解析不到。这是两阶段解析模式的已知约束。
+func parseExtraFlags(args []string) (workflowPath, promptsDir string) {
+	fs := flag.NewFlagSet("extra-flags-probe", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	promptsDir := fs.String("prompts-dir", "", "外部 prompt 模板目录（overlay 内置模板，留空则只用内置）")
+	workflow := fs.String("workflow", "", "workflow 配置文件路径（留空则使用内置默认）")
+	prompts := fs.String("prompts-dir", "", "外部 prompt 模板目录（overlay 内置模板，留空则只用内置）")
+	// 占位注册：让 flag 包能跳过这些 flag 继续解析，值由 runCLI 自己处理
+	_ = fs.String("repo", "", "")
+	_ = fs.Int("issue", 0, "")
+	_ = fs.Bool("version", false, "")
 	_ = fs.Parse(args)
-	return *promptsDir
+	return *workflow, *prompts
 }
 
 // loadWorkflow 加载 workflow 配置。
