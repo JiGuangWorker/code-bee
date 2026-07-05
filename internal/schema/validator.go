@@ -1,9 +1,13 @@
 // Package schema 提供 code-bee workflow 配置的 JSON Schema 加载与校验。
 //
 // 设计目标:
-// 1. 把 schemas/v1/*.json 通过 go:embed 打包进二进制，避免外部文件依赖
+// 1. 把 schemas/v1/*.yaml 通过 go:embed 打包进二进制，避免外部文件依赖
 // 2. 用 santhosh-tekuri/jsonschema/v5 做完整 draft-07 校验
 // 3. 对外暴露最小接口：NewValidator + ValidateWorkflow
+//
+// Schema 文件格式说明:
+//   - schema 定义文件用 YAML 格式（与用户配置统一），加载时转 JSON 喂给校验库
+//   - $id 和 $ref 中的 URL 保持 .json 后缀，作为 URI 标识符（JSON Schema 标准约定）
 //
 // 开发维护: AI Assistant
 // 创建时间: 2026-07-05
@@ -23,14 +27,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed schemas/v1/*.json
+//go:embed schemas/v1/*.yaml
 var schemaFS embed.FS
 
 const (
 	// workflowSchemaPath 是顶层 schema 在 embed FS 中的路径。
-	workflowSchemaPath = "schemas/v1/workflow.json"
+	workflowSchemaPath = "schemas/v1/workflow.yaml"
 
 	// schemaIDBase 是所有 v1 schema 的 $id 前缀。
+	// 注意：$id URL 保持 .json 后缀作为 URI 标识符（JSON Schema 标准约定），
+	// 实际文件用 .yaml 格式，加载时转 JSON 注册到 compiler。
 	schemaIDBase = "https://codebee.dev/schemas/v1/"
 )
 
@@ -46,8 +52,8 @@ type Validator struct {
 // NewValidator 创建并初始化一个 schema 校验器。
 //
 // 核心逻辑:
-// - 遍历 embed FS 中的 schemas/v1/*.json，逐个注册到 compiler
-// - 编译 workflow.json 作为顶层入口
+// - 遍历 embed FS 中的 schemas/v1/*.yaml，逐个转 JSON 后注册到 compiler
+// - 编译 workflow schema 作为顶层入口
 func NewValidator() (*Validator, error) {
 	c := jsonschema.NewCompiler()
 
@@ -66,7 +72,8 @@ func NewValidator() (*Validator, error) {
 // loadEmbeddedSchemas 把 embed FS 中所有 v1 schema 文件注册到 compiler。
 //
 // 关键点:
-// - $id 是文件名（如 tool.json），$ref 通过 https://codebee.dev/schemas/v1/<name>.json 引用
+// - schema 文件用 YAML 格式存储，加载时转 JSON 喂给 santhosh-tekuri/jsonschema
+// - $id 和 $ref URL 保持 .json 后缀，作为 URI 标识符（与 JSON Schema 标准约定一致）
 // - 必须先注册全部资源再 Compile，否则跨文件 $ref 会失败
 func loadEmbeddedSchemas(c *jsonschema.Compiler) error {
 	entries, err := fs.ReadDir(schemaFS, "schemas/v1")
@@ -75,7 +82,7 @@ func loadEmbeddedSchemas(c *jsonschema.Compiler) error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
 		}
 
@@ -84,8 +91,21 @@ func loadEmbeddedSchemas(c *jsonschema.Compiler) error {
 			return fmt.Errorf("read schema %s: %w", entry.Name(), readErr)
 		}
 
-		url := schemaIDBase + entry.Name()
-		c.AddResource(url, bytes.NewReader(data))
+		// YAML → JSON 转换：santhosh-tekuri/jsonschema 只接受 JSON 输入
+		var doc any
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("yaml unmarshal schema %s: %w", entry.Name(), err)
+		}
+
+		jsonBytes, err := json.Marshal(doc)
+		if err != nil {
+			return fmt.Errorf("json marshal schema %s: %w", entry.Name(), err)
+		}
+
+		// URL 用 .json 后缀（与 schema 文件内 $id 和 $ref 中的引用一致）
+		baseName := strings.TrimSuffix(entry.Name(), ".yaml")
+		url := schemaIDBase + baseName + ".json"
+		c.AddResource(url, bytes.NewReader(jsonBytes))
 	}
 
 	return nil
@@ -95,7 +115,7 @@ func loadEmbeddedSchemas(c *jsonschema.Compiler) error {
 //
 // 设计说明:
 // - 用户配置文件统一用 YAML（可读性好、支持注释、与 workflow 生态一致）
-// - 不接受 JSON 格式的用户配置；JSON 仅用于 schema 定义文件本身
+// - schema 定义文件也用 YAML，加载时统一转 JSON 喂给校验库
 //
 // 输入参数:
 //   - data: YAML 字节流
@@ -134,7 +154,6 @@ func (v *Validator) ValidateTool(data []byte) error {
 //
 // 设计说明:
 // - 用户配置文件统一用 YAML（可读性好、支持注释和多行字符串、与 K8s/GitHub Actions 生态一致）
-// - JSON Schema 定义文件本身仍是 JSON，但那是 schema 标准格式，与用户配置无关
 // - YAML 解出的数值类型与 jsonschema 期望不一致，需通过 JSON 往返统一类型
 func decodeConfig(data []byte) (any, error) {
 	trimmed := bytes.TrimSpace(data)

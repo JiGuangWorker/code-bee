@@ -1,21 +1,23 @@
 # code-bee Workflow Schema v1
 
-三层 JSON Schema，描述可配置的蜂巢调度策略。
+三层 JSON Schema（draft-07），描述可配置的蜂巢调度策略。
+
+> **文件格式说明**：schema 定义文件统一用 YAML 格式（`.yaml`），加载时转 JSON 喂给校验库。`$id` 和 `$ref` 中的 URL 保持 `.json` 后缀作为 URI 标识符（JSON Schema 标准约定）。
 
 ## 层次结构
 
 ```
-Layer 3: workflow.json            (顶层)
+Layer 3: workflow.yaml            (顶层)
               │
-Layer 2: pipeline_step.json       (编排原语：stage / parallel / loop 判别联合)
-         loop.json
-         loop_judge.json
+Layer 2: pipeline_step.yaml       (编排原语：stage / parallel / loop 判别联合)
+         loop.yaml
+         loop_judge.yaml
               │
-Layer 1: tool.json                (基础类型)
-         stage.json
-         condition.json
-         exit_condition.json
-         result_contract.json
+Layer 1: tool.yaml                (基础类型)
+         stage.yaml
+         condition.yaml
+         exit_condition.yaml
+         result_contract.yaml
 ```
 
 ## 关键设计

@@ -1,6 +1,6 @@
 // Package schema 的类型定义文件。
 //
-// 本文件定义与 schemas/v1/*.json 一一对应的 Go 数据结构。
+// 本文件定义与 schemas/v1/*.yaml 一一对应的 Go 数据结构。
 // 设计原则:
 // 1. 结构体字段顺序与 schema properties 顺序一致，便于对照
 // 2. yaml tag 与 schema 字段名严格一致

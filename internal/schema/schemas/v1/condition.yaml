@@ -1,0 +1,9 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: https://codebee.dev/schemas/v1/condition.json
+title: Condition
+description: 条件表达式，用于 stage.when 和 loop.exit_when。支持两种形式：字符串表达式或结构化条件对象。
+oneOf:
+- type: string
+  minLength: 1
+  description: 表达式字符串，如 'round >= 2'、'review.status == "PASS"'。运行时求值。
+- $ref: https://codebee.dev/schemas/v1/exit_condition.json
