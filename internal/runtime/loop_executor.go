@@ -73,38 +73,14 @@ func (e *LoopExecutor) Execute(ctx context.Context, step schema.PipelineStep, ec
 		loopState.Round = round
 
 		// 3. 执行 body
-		for _, bodyStep := range loop.Body {
-			r, err := e.dispatch(ctx, bodyStep, ec)
-			if err != nil {
-				if r == nil {
-					r = &StepResult{Success: false, StageName: "loop"}
-				}
-				return r, err
-			}
-			if r != nil {
-				lastResult = r
-				// blocked 处理
-				if r.Blocked && bodyStep.Stage != nil {
-					onBlocked := bodyStep.Stage.OnBlocked
-					if onBlocked == "" {
-						onBlocked = "stop"
-					}
-					if onBlocked == "stop" {
-						return r, nil
-					}
-				}
-			}
-
-			// 每步后检查 exit_when
-			if len(loop.ExitWhen) > 0 {
-				matched, err := AnyExitConditionMatched(ec, loop.ExitWhen)
-				if err != nil {
-					return nil, fmt.Errorf("loop %s exit_when: %w", loop.ID, err)
-				}
-				if matched {
-					return e.makeExitResult(lastResult, "exit_when matched"), nil
-				}
-			}
+		var err error
+		lastResult, err = e.executeBody(ctx, loop, ec, lastResult)
+		if err != nil {
+			return lastResult, err
+		}
+		// executeBody 返回的终端结果需要立即退出
+		if lastResult != nil && (lastResult.Completed || lastResult.Blocked) {
+			return lastResult, nil
 		}
 
 		// 4. 维护 ConsecutiveUnknown
@@ -123,37 +99,15 @@ func (e *LoopExecutor) Execute(ctx context.Context, step schema.PipelineStep, ec
 		}
 
 		// 5. 执行 judge
-		if loop.Judge != nil && round >= judgeStartRound(loop.Judge) {
-			judgeResult, err := e.runJudge(ctx, ec, loop.Judge, loopState)
-			if err != nil {
-				return judgeResult, err
-			}
-			if judgeResult != nil {
-				decision := getDecision(judgeResult)
-				action := mapJudgeDecision(decision, loop.Judge.OnDecision)
-
-				switch action {
-				case "exit":
-					return &StepResult{
-						Success:        true,
-						ManualRequired: decision == "STOP_MANUAL",
-						Blocked:        decision == "STOP_BLOCKED",
-						StageName:      "loop",
-						Output:         judgeResult.Output,
-						Data:           judgeResult.Data,
-					}, nil
-				case "continue":
-					if decision == "SHRINK_TASK" {
-						fb := buildShrinkFeedback(judgeResult)
-						if fb != "" {
-							loopState.LastFeedback = fb + "\n\n" + loopState.LastFeedback
-						}
-					}
-				}
-			}
+		judgeResult, err := e.handleJudge(ctx, ec, loop, loopState, lastResult, round)
+		if err != nil {
+			return judgeResult, err
+		}
+		if judgeResult != nil {
+			return judgeResult, nil
 		}
 
-		// 6. 更新 LastFeedback（用最后一个 stage 的 next_action 作为下一轮反馈）
+		// 6. 更新 LastFeedback
 		if lastResult != nil {
 			fb := buildFeedbackFromResult(lastResult)
 			if fb != "" {
@@ -171,11 +125,85 @@ func (e *LoopExecutor) Execute(ctx context.Context, step schema.PipelineStep, ec
 	}, nil
 }
 
+// executeBody 执行 loop body 中的所有 step，处理 blocked 和 exit_when。
+func (e *LoopExecutor) executeBody(ctx context.Context, loop *schema.Loop, ec *ExecutionContext, lastResult *StepResult) (*StepResult, error) {
+	for _, bodyStep := range loop.Body {
+		r, err := e.dispatch(ctx, bodyStep, ec)
+		if err != nil {
+			if r == nil {
+				r = &StepResult{Success: false, StageName: "loop"}
+			}
+			return r, err
+		}
+		if r != nil {
+			lastResult = r
+			if r.Blocked && bodyStep.Stage != nil {
+				onBlocked := bodyStep.Stage.OnBlocked
+				if onBlocked == "" {
+					onBlocked = "stop"
+				}
+				if onBlocked == "stop" {
+					return r, nil
+				}
+			}
+		}
+
+		if len(loop.ExitWhen) > 0 {
+			matched, err := AnyExitConditionMatched(ec, loop.ExitWhen)
+			if err != nil {
+				return nil, fmt.Errorf("loop %s exit_when: %w", loop.ID, err)
+			}
+			if matched {
+				return e.makeExitResult(lastResult, "exit_when matched"), nil
+			}
+		}
+	}
+	return lastResult, nil
+}
+
+// handleJudge 执行价值评估并处理决策。
+// 返回 nil result 表示 CONTINUE；返回非 nil 表示 EXIT。
+func (e *LoopExecutor) handleJudge(ctx context.Context, ec *ExecutionContext, loop *schema.Loop, loopState *LoopState, _ *StepResult, round int) (*StepResult, error) {
+	if loop.Judge == nil || round < judgeStartRound(loop.Judge) {
+		return nil, nil
+	}
+
+	judgeResult, err := e.runJudge(ctx, ec, loop.Judge, loopState)
+	if err != nil {
+		return judgeResult, err
+	}
+	if judgeResult == nil {
+		return nil, nil
+	}
+
+	decision := getDecision(judgeResult)
+	action := mapJudgeDecision(decision, loop.Judge.OnDecision)
+
+	if action == "exit" {
+		return &StepResult{
+			Success:        true,
+			ManualRequired: decision == "STOP_MANUAL",
+			Blocked:        decision == "STOP_BLOCKED",
+			StageName:      "loop",
+			Output:         judgeResult.Output,
+			Data:           judgeResult.Data,
+		}, nil
+	}
+
+	if decision == "SHRINK_TASK" {
+		fb := buildShrinkFeedback(judgeResult)
+		if fb != "" {
+			loopState.LastFeedback = fb + "\n\n" + loopState.LastFeedback
+		}
+	}
+	return nil, nil
+}
+
 // runJudge 执行价值评估员。
 //
 // 通过 dispatch 执行，便于测试 mock。dispatch 会路由到 StageExecutor，
 // StageExecutor 负责解析 tool、计算路径、调用 tool.Execute。
-func (e *LoopExecutor) runJudge(ctx context.Context, ec *ExecutionContext, judge *schema.LoopJudge, loopState *LoopState) (*StepResult, error) {
+func (e *LoopExecutor) runJudge(ctx context.Context, ec *ExecutionContext, judge *schema.LoopJudge, _ *LoopState) (*StepResult, error) {
 	judgeStep := schema.PipelineStep{
 		Stage: &schema.Stage{
 			Name: "loop-judge",

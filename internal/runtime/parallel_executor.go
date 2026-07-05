@@ -95,7 +95,7 @@ func (e *ParallelExecutor) joinResults(
 	errs []error,
 	join string,
 	ec *ExecutionContext,
-	base map[string]*StepResult,
+	_ map[string]*StepResult,
 	firstSuccessIdx int,
 ) (*StepResult, error) {
 	// 收集成功分支
@@ -148,26 +148,31 @@ func (e *ParallelExecutor) joinResults(
 	}
 
 	// 成功：聚合 status
-	// all 模式：所有 status 都 PASS 才 PASS
-	// any/first_success：取首个成功的 status
+	agg.Status = aggregateStatus(results, join, firstSuccessIdx, successBranches)
+
+	return agg, nil
+}
+
+// aggregateStatus 按 join 策略聚合多个分支的 status。
+func aggregateStatus(results []*StepResult, join string, firstSuccessIdx int, successBranches []int) string {
 	if join == "all" {
-		allPass := true
 		for _, r := range results {
 			if r == nil || r.Status != "PASS" {
 				if r != nil && r.Status != "" && r.Status != "PASS" {
-					allPass = false
-					break
+					return ""
 				}
 			}
 		}
-		if allPass && len(results) > 0 {
-			agg.Status = "PASS"
+		if len(results) > 0 {
+			return "PASS"
 		}
-	} else if firstSuccessIdx >= 0 && results[firstSuccessIdx] != nil {
-		agg.Status = results[firstSuccessIdx].Status
-	} else if len(successBranches) > 0 && results[successBranches[0]] != nil {
-		agg.Status = results[successBranches[0]].Status
+		return ""
 	}
-
-	return agg, nil
+	if firstSuccessIdx >= 0 && results[firstSuccessIdx] != nil {
+		return results[firstSuccessIdx].Status
+	}
+	if len(successBranches) > 0 && results[successBranches[0]] != nil {
+		return results[successBranches[0]].Status
+	}
+	return ""
 }

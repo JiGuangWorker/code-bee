@@ -185,8 +185,8 @@ func (f fakeDispatchService) Dispatch(context.Context, *config.Config) (*pipelin
 // 立即停止解析，排在 --repo 之后的 --workflow / --prompts-dir 永远解析不到。
 func TestParseExtraFlags(t *testing.T) {
 	cases := []struct {
-		name        string
-		args        []string
+		name         string
+		args         []string
 		wantWorkflow string
 		wantPrompts  string
 	}{

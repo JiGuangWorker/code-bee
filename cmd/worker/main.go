@@ -95,7 +95,7 @@ func parseExtraFlags(args []string) (workflowPath, promptsDir string) {
 	_ = fs.String("repo", "", "")
 	_ = fs.Int("issue", 0, "")
 	_ = fs.Bool("version", false, "")
-	_ = fs.Parse(args)
+	_ = fs.Parse(args) //nolint:errcheck // ContinueOnError 下 Parse 总是返回 nil
 	return *workflow, *prompts
 }
 

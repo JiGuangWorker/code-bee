@@ -144,6 +144,8 @@ func extractPathFromPrompt(t *testing.T, prompt string, prefix string) string {
 }
 
 // readLoopHistoryForTest 读取并反序列化 loop_history.json，供断言逐轮历史。
+//
+//nolint:unused // 保留供后续 loop 状态机测试启用时使用
 func readLoopHistoryForTest(t *testing.T, filePath string) *LoopHistory {
 	t.Helper()
 

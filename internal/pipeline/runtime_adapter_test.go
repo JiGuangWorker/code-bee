@@ -25,10 +25,10 @@ func TestAdapterResolveResultFileMapping(t *testing.T) {
 	adapter := NewArtifactResolverAdapter(artifacts)
 
 	cases := []struct {
-		name      string
-		stageName string
-		args      map[string]any
-		loopRound int
+		name       string
+		stageName  string
+		args       map[string]any
+		loopRound  int
 		wantSuffix string
 	}{
 		{name: "issue-handling", stageName: "issue-handling", wantSuffix: "issue_intake_result.json"},

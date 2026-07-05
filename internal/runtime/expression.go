@@ -71,25 +71,30 @@ func EvalExitCondition(ec *ExecutionContext, cond schema.ExitCondition) (bool, e
 		return ok, nil
 
 	case "regex":
-		if !ok {
-			return false, nil
-		}
-		s, err := toString(val)
-		if err != nil {
-			return false, fmt.Errorf("operator regex: value not a string: %w", err)
-		}
-		pattern, err := toString(cond.Value)
-		if err != nil {
-			return false, fmt.Errorf("operator regex: pattern not a string: %w", err)
-		}
-		matched, err := regexp.MatchString(pattern, s)
-		if err != nil {
-			return false, fmt.Errorf("operator regex: invalid pattern %q: %w", pattern, err)
-		}
-		return matched, nil
+		return evalRegexCondition(ok, val, cond.Value)
 	}
 
 	return false, fmt.Errorf("unknown operator: %s", cond.Operator)
+}
+
+// evalRegexCondition 处理 regex 操作符的匹配逻辑。
+func evalRegexCondition(ok bool, val, patternVal any) (bool, error) {
+	if !ok {
+		return false, nil
+	}
+	s, err := toString(val)
+	if err != nil {
+		return false, fmt.Errorf("operator regex: value not a string: %w", err)
+	}
+	pattern, err := toString(patternVal)
+	if err != nil {
+		return false, fmt.Errorf("operator regex: pattern not a string: %w", err)
+	}
+	matched, err := regexp.MatchString(pattern, s)
+	if err != nil {
+		return false, fmt.Errorf("operator regex: invalid pattern %q: %w", pattern, err)
+	}
+	return matched, nil
 }
 
 // EvalCondition 求值 Condition（支持 Expr 和 Structured 两种形态）。

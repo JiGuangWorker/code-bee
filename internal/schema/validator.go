@@ -31,9 +31,6 @@ import (
 var schemaFS embed.FS
 
 const (
-	// workflowSchemaPath 是顶层 schema 在 embed FS 中的路径。
-	workflowSchemaPath = "schemas/v1/workflow.yaml"
-
 	// schemaIDBase 是所有 v1 schema 的 $id 前缀。
 	// 注意：$id URL 保持 .json 后缀作为 URI 标识符（JSON Schema 标准约定），
 	// 实际文件用 .yaml 格式，加载时转 JSON 注册到 compiler。
@@ -105,7 +102,9 @@ func loadEmbeddedSchemas(c *jsonschema.Compiler) error {
 		// URL 用 .json 后缀（与 schema 文件内 $id 和 $ref 中的引用一致）
 		baseName := strings.TrimSuffix(entry.Name(), ".yaml")
 		url := schemaIDBase + baseName + ".json"
-		c.AddResource(url, bytes.NewReader(jsonBytes))
+		if err := c.AddResource(url, bytes.NewReader(jsonBytes)); err != nil {
+			return fmt.Errorf("add resource %s: %w", baseName, err)
+		}
 	}
 
 	return nil

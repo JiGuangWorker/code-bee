@@ -128,8 +128,8 @@ func TestEngine_Run_Blocked(t *testing.T) {
 func TestEngine_Run_DispatchError(t *testing.T) {
 	// 用一个 tool 不存在的 stage 触发 dispatch 错误
 	wf := &schema.Workflow{
-		Version:  "1",
-		Tools:    []schema.Tool{},
+		Version: "1",
+		Tools:   []schema.Tool{},
 		Pipeline: []schema.PipelineStep{
 			{Stage: &schema.Stage{Name: "test", Tool: "nonexistent"}},
 		},

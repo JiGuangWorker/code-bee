@@ -140,77 +140,87 @@ func (t *AgentTool) buildPromptData(inv Invocation) PromptData {
 	if inv.EC != nil {
 		switch t.def.PromptTemplate {
 		case promptCoding:
-			// 从 issue-handling 拿 agent/summary/acceptance
-			if v, ok := inv.EC.Lookup("issue-handling", "agent"); ok {
-				if s, ok := v.(string); ok {
-					data.Agent = s
-				}
-			}
-			if v, ok := inv.EC.Lookup("issue-handling", "summary"); ok {
-				if s, ok := v.(string); ok {
-					data.IssueSummary = s
-				}
-			}
-			if v, ok := inv.EC.Lookup("issue-handling", "acceptance"); ok {
-				if s, ok := v.(string); ok {
-					data.Acceptance = s
-				}
-			}
-
+			t.fillCodingPromptData(&data, inv)
 		case promptReview:
-			// 从 issue-handling 拿 summary/acceptance
-			if v, ok := inv.EC.Lookup("issue-handling", "summary"); ok {
-				if s, ok := v.(string); ok {
-					data.IssueSummary = s
-				}
-			}
-			if v, ok := inv.EC.Lookup("issue-handling", "acceptance"); ok {
-				if s, ok := v.(string); ok {
-					data.Acceptance = s
-				}
-			}
-			// 从 coding 拿 summary/evidence/acceptance_check
-			if v, ok := inv.EC.Lookup("coding", "summary"); ok {
-				if s, ok := v.(string); ok {
-					data.CodingSummary = s
-				}
-			}
-			if v, ok := inv.EC.Lookup("coding", "evidence"); ok {
-				if s, ok := v.(string); ok {
-					data.CodingEvidence = s
-				}
-			}
-			if v, ok := inv.EC.Lookup("coding", "acceptance_check"); ok {
-				if s, ok := v.(string); ok {
-					data.CodingAcceptanceCheck = s
-				}
-			}
-
+			t.fillReviewPromptData(&data, inv)
 		case promptIssuePost:
-			// source file path 从 input_from stage 的结果文件获取
-			if inv.EC.Artifacts != nil {
-				sourceStage, _ := getStringArg(inv.Args, "source_stage")
-				if sourceStage == "" {
-					// 默认从 input_from 字段推断
-					sourceStage = ""
-				}
-				if sourceStage != "" {
-					data.SourceFilePath = inv.EC.Artifacts.ResolveResultFile(sourceStage, inv.Args, 0)
-				}
-			}
-			if v, ok := getStringArg(inv.Args, "purpose"); ok {
-				data.Purpose = v
-			}
-
+			t.fillIssuePostPromptData(&data, inv)
 		case promptLoopJudge:
-			// history file path 从 artifacts 获取
-			if inv.EC.Artifacts != nil {
-				data.HistoryFilePath = inv.EC.Artifacts.LoopHistoryPath()
-			}
+			t.fillLoopJudgePromptData(&data, inv)
 		}
 	}
 
 	return data
+}
+
+// fillCodingPromptData 填充编码阶段的 prompt 数据。
+func (t *AgentTool) fillCodingPromptData(data *PromptData, inv Invocation) {
+	ec := inv.EC
+	if v, ok := ec.Lookup("issue-handling", "agent"); ok {
+		if s, ok := v.(string); ok {
+			data.Agent = s
+		}
+	}
+	if v, ok := ec.Lookup("issue-handling", "summary"); ok {
+		if s, ok := v.(string); ok {
+			data.IssueSummary = s
+		}
+	}
+	if v, ok := ec.Lookup("issue-handling", "acceptance"); ok {
+		if s, ok := v.(string); ok {
+			data.Acceptance = s
+		}
+	}
+}
+
+// fillReviewPromptData 填充审查阶段的 prompt 数据。
+func (t *AgentTool) fillReviewPromptData(data *PromptData, inv Invocation) {
+	ec := inv.EC
+	if v, ok := ec.Lookup("issue-handling", "summary"); ok {
+		if s, ok := v.(string); ok {
+			data.IssueSummary = s
+		}
+	}
+	if v, ok := ec.Lookup("issue-handling", "acceptance"); ok {
+		if s, ok := v.(string); ok {
+			data.Acceptance = s
+		}
+	}
+	if v, ok := ec.Lookup("coding", "summary"); ok {
+		if s, ok := v.(string); ok {
+			data.CodingSummary = s
+		}
+	}
+	if v, ok := ec.Lookup("coding", "evidence"); ok {
+		if s, ok := v.(string); ok {
+			data.CodingEvidence = s
+		}
+	}
+	if v, ok := ec.Lookup("coding", "acceptance_check"); ok {
+		if s, ok := v.(string); ok {
+			data.CodingAcceptanceCheck = s
+		}
+	}
+}
+
+// fillIssuePostPromptData 填充 Issue 提交阶段的 prompt 数据。
+func (t *AgentTool) fillIssuePostPromptData(data *PromptData, inv Invocation) {
+	if inv.EC.Artifacts != nil {
+		sourceStage, _ := getStringArg(inv.Args, "source_stage")
+		if sourceStage != "" {
+			data.SourceFilePath = inv.EC.Artifacts.ResolveResultFile(sourceStage, inv.Args, 0)
+		}
+	}
+	if v, ok := getStringArg(inv.Args, "purpose"); ok {
+		data.Purpose = v
+	}
+}
+
+// fillLoopJudgePromptData 填充价值评估阶段的 prompt 数据。
+func (t *AgentTool) fillLoopJudgePromptData(data *PromptData, inv Invocation) {
+	if inv.EC.Artifacts != nil {
+		data.HistoryFilePath = inv.EC.Artifacts.LoopHistoryPath()
+	}
 }
 
 // extractStatus 从结果 map 中提取 status 字段。

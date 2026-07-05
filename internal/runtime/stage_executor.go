@@ -113,26 +113,24 @@ func (e *StageExecutor) Execute(ctx context.Context, step schema.PipelineStep, e
 	}
 
 	// 9. 处理 on_blocked
-	if result.Blocked {
-		onBlocked := stage.OnBlocked
-		if onBlocked == "" {
-			onBlocked = "stop"
-		}
-		switch onBlocked {
-		case "skip":
-			result.Skipped = true
-			// 继续存储并返回
-		case "continue":
-			// 继续存储并返回
-		case "stop":
-			// 默认行为：存储后返回，上层 Engine 会终止
-		default:
-			// 未知值默认 stop
-		}
-	}
+	handleOnBlocked(result, stage.OnBlocked)
 
 	// 10. 存储结果
 	ec.SetResult(stage.Name, result)
 
 	return result, nil
+}
+
+// handleOnBlocked 根据 stage 的 on_blocked 策略调整阻塞结果。
+func handleOnBlocked(result *StepResult, onBlocked string) {
+	if !result.Blocked {
+		return
+	}
+	if onBlocked == "" {
+		onBlocked = "stop"
+	}
+	if onBlocked == "skip" {
+		result.Skipped = true
+	}
+	// "continue" 和 "stop" 不改 result 字段，上层 Engine 决定是否终止
 }
