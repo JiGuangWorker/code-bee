@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://codebee.dev/schemas/v1/stage.json",
+  "title": "StageDefinition",
+  "description": "流水线中的一个执行阶段。引用一个工具，并定义其输入输出与执行条件。",
+  "type": "object",
+  "required": ["name", "tool"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$",
+      "description": "stage 唯一标识，loop 内通过此名引用结果"
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1,
+      "description": "引用 tools[].name 或 tools[].aliases[] 中的任一值"
+    },
+    "input_from": {
+      "type": "string",
+      "minLength": 1,
+      "description": "消费哪个 stage 的输出，值为目标 stage 的 name"
+    },
+    "output": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*\\.json$",
+      "description": "结果文件名，必须以 .json 结尾"
+    },
+    "when": {
+      "$ref": "https://codebee.dev/schemas/v1/condition.json",
+      "description": "条件执行表达式，如 round >= 2"
+    },
+    "on_blocked": {
+      "type": "string",
+      "enum": ["stop", "skip", "continue"],
+      "default": "stop",
+      "description": "本 stage 阻塞时的处理策略：stop=终止流程, skip=跳过本 stage, continue=继续后续"
+    },
+    "args": {
+      "type": "object",
+      "description": "传递给工具的额外参数",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,12 @@
+version: "1"
+name: bad-tool-name
+description: 工具名不符合 a-z 开头规则（含大写）
+tools:
+  - name: Coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: coding
+      tool: Coder

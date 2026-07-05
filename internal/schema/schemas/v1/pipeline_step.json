@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://codebee.dev/schemas/v1/pipeline_step.json",
+  "title": "PipelineStep",
+  "description": "流水线步骤。三种原语判别联合：stage（串行单步）、parallel（并行）、loop（循环）。",
+  "oneOf": [
+    {"$ref": "https://codebee.dev/schemas/v1/pipeline_step.json#/$defs/stageStep"},
+    {"$ref": "https://codebee.dev/schemas/v1/pipeline_step.json#/$defs/parallelStep"},
+    {"$ref": "https://codebee.dev/schemas/v1/pipeline_step.json#/$defs/loopStep"}
+  ],
+  "$defs": {
+    "stageStep": {
+      "type": "object",
+      "required": ["stage"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {"$ref": "https://codebee.dev/schemas/v1/stage.json"}
+      }
+    },
+    "parallelStep": {
+      "type": "object",
+      "required": ["parallel"],
+      "additionalProperties": false,
+      "properties": {
+        "parallel": {
+          "type": "array",
+          "items": {"$ref": "https://codebee.dev/schemas/v1/pipeline_step.json"},
+          "minItems": 2,
+          "description": "并行执行的步骤列表"
+        },
+        "join": {
+          "type": "string",
+          "enum": ["all", "any", "first_success"],
+          "default": "all",
+          "description": "汇合策略：all=全部成功, any=任一成功, first_success=首个成功即继续"
+        }
+      }
+    },
+    "loopStep": {
+      "type": "object",
+      "required": ["loop"],
+      "additionalProperties": false,
+      "properties": {
+        "loop": {"$ref": "https://codebee.dev/schemas/v1/loop.json"}
+      }
+    }
+  }
+}

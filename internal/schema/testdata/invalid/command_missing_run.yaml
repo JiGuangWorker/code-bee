@@ -1,0 +1,14 @@
+version: "1"
+name: command-missing-run
+description: command 类型工具缺少必填的 run 字段
+tools:
+  - name: lint
+    type: command
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: lint
+      tool: lint

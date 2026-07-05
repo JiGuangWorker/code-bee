@@ -1,0 +1,11 @@
+version: "1"
+name: minimal
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: coding
+      tool: coder

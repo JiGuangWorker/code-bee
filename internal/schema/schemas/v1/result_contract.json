@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://codebee.dev/schemas/v1/result_contract.json",
+  "title": "ResultContract",
+  "description": "结果契约，声明 stage 产出的 JSON 结构与状态字段，供调度器做退出判断。",
+  "type": "object",
+  "required": ["schema"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "object",
+      "description": "JSON Schema 描述本 stage 的输出结构"
+    },
+    "status_field": {
+      "type": "string",
+      "default": "status",
+      "description": "哪个字段表示状态，用于 exit_when 判断"
+    },
+    "status_enum": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "状态枚举值列表"
+    }
+  }
+}

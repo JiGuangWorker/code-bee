@@ -1,0 +1,3 @@
+version: "1"
+name: missing-required
+description: 缺少 tools 和 pipeline 必填字段

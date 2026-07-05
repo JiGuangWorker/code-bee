@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://codebee.dev/schemas/v1/loop.json",
+  "title": "Loop",
+  "description": "循环编排原语。body 内的步骤序列每轮顺序执行，直到命中 exit_when 或触达 max_iterations。",
+  "type": "object",
+  "required": ["id", "body"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$",
+      "description": "loop 唯一标识，用于嵌套 loop 与日志归因"
+    },
+    "max_iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 3,
+      "description": "硬上限，防止死循环"
+    },
+    "max_consecutive_unknown": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 2,
+      "description": "连续 UNKNOWN 状态的软上限，触达后强制要求补证据或停止"
+    },
+    "timeout": {
+      "type": "string",
+      "pattern": "^[0-9]+(s|m|h)$",
+      "description": "整体超时时间"
+    },
+    "exit_when": {
+      "type": "array",
+      "items": {"$ref": "https://codebee.dev/schemas/v1/exit_condition.json"},
+      "minItems": 1,
+      "description": "退出条件列表，任一满足即退出 loop"
+    },
+    "body": {
+      "type": "array",
+      "items": {"$ref": "https://codebee.dev/schemas/v1/pipeline_step.json"},
+      "minItems": 1,
+      "description": "每轮执行的步骤序列，可包含 stage/parallel/嵌套 loop"
+    },
+    "judge": {
+      "$ref": "https://codebee.dev/schemas/v1/loop_judge.json",
+      "description": "可选的价值评估员"
+    }
+  }
+}
