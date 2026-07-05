@@ -14,6 +14,9 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"text/template"
 )
 
@@ -83,10 +86,17 @@ type PromptBuilder struct {
 	templates map[string]*template.Template
 }
 
-// NewPromptBuilder 加载所有内置 prompt 模板。
-func NewPromptBuilder() (*PromptBuilder, error) {
+// NewPromptBuilder 加载内置 prompt 模板，然后叠加外部目录模板（overlay 语义）。
+//
+// 加载策略:
+// - dir 为空: 只加载内置 5 个模板
+// - dir 非空: 先加载内置模板，再读取 dir 下所有 .md 文件，同名模板覆盖内置
+//
+// overlay 语义让用户只需提供想自定义的模板，其余回退到内置默认。
+func NewPromptBuilder(dir string) (*PromptBuilder, error) {
 	templates := make(map[string]*template.Template)
 
+	// 1. 加载内置模板
 	names := []string{
 		promptIssueHandling,
 		promptCoding,
@@ -109,7 +119,43 @@ func NewPromptBuilder() (*PromptBuilder, error) {
 		templates[name] = tmpl
 	}
 
+	// 2. 叠加外部目录模板（overlay）
+	if dir != "" {
+		if err := loadPromptsFromDir(dir, templates); err != nil {
+			return nil, err
+		}
+	}
+
 	return &PromptBuilder{templates: templates}, nil
+}
+
+// loadPromptsFromDir 读取 dir 下所有 .md 文件，解析为模板并覆盖 templates 中的同名条目。
+func loadPromptsFromDir(dir string, templates map[string]*template.Template) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("runtime.NewPromptBuilder: read prompts dir %q: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		name := strings.TrimSuffix(entry.Name(), ".md")
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return fmt.Errorf("runtime.NewPromptBuilder: read %s: %w", entry.Name(), err)
+		}
+
+		tmpl, err := template.New(name).Parse(string(data))
+		if err != nil {
+			return fmt.Errorf("runtime.NewPromptBuilder: parse %s: %w", name, err)
+		}
+
+		templates[name] = tmpl // 覆盖同名内置模板
+	}
+
+	return nil
 }
 
 // Build 渲染指定模板，返回最终 prompt 字符串。

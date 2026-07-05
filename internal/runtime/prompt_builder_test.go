@@ -1,12 +1,14 @@
 package runtime
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestNewPromptBuilder_LoadsAllTemplates(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -19,7 +21,7 @@ func TestNewPromptBuilder_LoadsAllTemplates(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_IssueHandling(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -60,7 +62,7 @@ func TestPromptBuilder_Build_IssueHandling(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_Coding(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -102,7 +104,7 @@ func TestPromptBuilder_Build_Coding(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_Review(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestPromptBuilder_Build_Review(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_IssuePost(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -187,7 +189,7 @@ func TestPromptBuilder_Build_IssuePost(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_LoopJudge(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -223,7 +225,7 @@ func TestPromptBuilder_Build_LoopJudge(t *testing.T) {
 }
 
 func TestPromptBuilder_Build_UnknownTemplate(t *testing.T) {
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder() error: %v", err)
 	}
@@ -254,6 +256,68 @@ func TestMapTemplateToKind(t *testing.T) {
 		got := mapTemplateToKind(c.template)
 		if got != c.want {
 			t.Errorf("mapTemplateToKind(%q) = %q, want %q", c.template, got, c.want)
+		}
+	}
+}
+
+// TestNewPromptBuilder_OverlayExternalDir 验证外部目录的 .md 模板会覆盖同名内置模板，
+// 而未覆盖的模板仍用内置默认。
+func TestNewPromptBuilder_OverlayExternalDir(t *testing.T) {
+	// 创建临时目录，写入自定义 coding.md
+	tempDir := t.TempDir()
+	customContent := "自定义 coding 模板：{{.Repo}} #{{.IssueNumber}}"
+	if err := os.WriteFile(filepath.Join(tempDir, "coding.md"), []byte(customContent), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error: %v", err)
+	}
+
+	pb, err := NewPromptBuilder(tempDir)
+	if err != nil {
+		t.Fatalf("NewPromptBuilder(%q) error: %v", tempDir, err)
+	}
+
+	// coding 模板应被覆盖
+	output, err := pb.Build(promptCoding, PromptData{Repo: "test/repo", IssueNumber: 7})
+	if err != nil {
+		t.Fatalf("Build(coding) error: %v", err)
+	}
+	if !strings.Contains(output, "自定义 coding 模板") {
+		t.Errorf("coding template should be overridden, got: %s", output)
+	}
+	if !strings.Contains(output, "test/repo #7") {
+		t.Errorf("coding template should render data, got: %s", output)
+	}
+
+	// review 模板应仍用内置默认（未被覆盖）
+	reviewOutput, err := pb.Build(promptReview, PromptData{ReviewerAgent: "审查员"})
+	if err != nil {
+		t.Fatalf("Build(review) error: %v", err)
+	}
+	if !strings.Contains(reviewOutput, "审查") {
+		t.Errorf("review template should use builtin, got: %s", reviewOutput)
+	}
+}
+
+// TestNewPromptBuilder_ExternalDirNotFound 验证不存在的目录会返回错误。
+func TestNewPromptBuilder_ExternalDirNotFound(t *testing.T) {
+	_, err := NewPromptBuilder("/nonexistent/path/that/should/not/exist")
+	if err == nil {
+		t.Fatal("NewPromptBuilder() with nonexistent dir should return error")
+	}
+	if !strings.Contains(err.Error(), "read prompts dir") {
+		t.Errorf("error should mention prompts dir, got: %v", err)
+	}
+}
+
+// TestNewPromptBuilder_EmptyDirUsesBuiltinOnly 验证空字符串目录只加载内置模板。
+func TestNewPromptBuilder_EmptyDirUsesBuiltinOnly(t *testing.T) {
+	pb, err := NewPromptBuilder("")
+	if err != nil {
+		t.Fatalf("NewPromptBuilder(\"\") error: %v", err)
+	}
+
+	for _, name := range []string{promptIssueHandling, promptCoding, promptReview, promptIssuePost, promptLoopJudge} {
+		if _, ok := pb.templates[name]; !ok {
+			t.Errorf("builtin template %q not loaded", name)
 		}
 	}
 }

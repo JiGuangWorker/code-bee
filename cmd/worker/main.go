@@ -51,18 +51,26 @@ func main() {
 // buildService 构造真实的 pipeline.Service，包含 workflow 加载。
 //
 // workflowPath 为空时使用内置默认 workflow。
+// promptsDir 为空时只用内置 prompt 模板。
 func buildService(args []string) (*pipeline.Service, error) {
 	workflowPath := parseWorkflowFlag(args)
+	promptsDir := parsePromptsDirFlag(args)
 
 	wf, err := loadWorkflow(workflowPath)
 	if err != nil {
 		return nil, fmt.Errorf("加载 workflow 失败: %w", err)
 	}
 
+	var opts []runtime.EngineOption
+	if promptsDir != "" {
+		opts = append(opts, runtime.WithPromptsDir(promptsDir))
+	}
+
 	service, err := pipeline.NewService(
 		platformgithub.NewClient(),
 		agent.New(),
 		wf,
+		opts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建调度服务失败: %w", err)
@@ -80,6 +88,17 @@ func parseWorkflowFlag(args []string) string {
 	workflowPath := fs.String("workflow", "", "workflow 配置文件路径（留空则使用内置默认）")
 	_ = fs.Parse(args)
 	return *workflowPath
+}
+
+// parsePromptsDirFlag 从参数中解析 --prompts-dir flag，不解析其他 flag。
+//
+// 单独解析是为了避免与 runCLI 的 flag.Parse 冲突（仅提取 prompts 目录路径）。
+func parsePromptsDirFlag(args []string) string {
+	fs := flag.NewFlagSet("prompts-dir-probe", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	promptsDir := fs.String("prompts-dir", "", "外部 prompt 模板目录（overlay 内置模板，留空则只用内置）")
+	_ = fs.Parse(args)
+	return *promptsDir
 }
 
 // loadWorkflow 加载 workflow 配置。
@@ -101,10 +120,11 @@ func loadWorkflow(path string) (*schema.Workflow, error) {
 
 // usageError 当参数缺失或解析失败时，向 stderr 输出统一的使用说明。
 func usageError(stderr io.Writer) int {
-	fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number> [--workflow <path>]\n\n")
+	fmt.Fprintf(stderr, "用法: code-bee --repo <owner/repo> --issue <number> [--workflow <path>] [--prompts-dir <dir>]\n\n")
 	fmt.Fprintf(stderr, "示例:\n")
 	fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42\n")
 	fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42 --workflow ./my-workflow.yaml\n")
+	fmt.Fprintf(stderr, "  code-bee --repo owner/repo --issue 42 --prompts-dir ./my-prompts/\n")
 	return 1
 }
 
@@ -120,8 +140,9 @@ func runCLI(args []string, stdout, stderr io.Writer, factory serviceFactory) int
 	repo := fs.String("repo", "", "仓库地址，如 owner/repo")
 	issueNumber := fs.Int("issue", 0, "Issue 编号")
 	showVersion := fs.Bool("version", false, "输出版本信息")
-	// --workflow flag 仅用于文档展示，实际解析在 buildService 中完成
+	// --workflow / --prompts-dir flag 仅用于文档展示，实际解析在 buildService 中完成
 	_ = fs.String("workflow", "", "workflow 配置文件路径（留空则使用内置默认）")
+	_ = fs.String("prompts-dir", "", "外部 prompt 模板目录（overlay 内置模板）")
 
 	if err := fs.Parse(args); err != nil {
 		return usageError(stderr)

@@ -52,12 +52,13 @@ type Service struct {
 // - platformClient: 平台客户端（GitHub 等），用于构造 Issue URL 和技能包说明
 // - runner: 智能体执行器，由 runtime.AgentTool 包装调用
 // - wf: 已校验的 workflow 配置，驱动整个调度流程
+// - opts: 可选的 EngineOption（如 runtime.WithPromptsDir），透传给 runtime.NewEngine
 //
 // 返回值:
 // - *Service: 可用于 Dispatch 的服务实例
 // - error: 当 runtime.Engine 构造失败时返回
-func NewService(platformClient platform.Client, runner Runner, wf *schema.Workflow) (*Service, error) {
-	engine, err := runtime.NewEngine(wf, runner)
+func NewService(platformClient platform.Client, runner Runner, wf *schema.Workflow, opts ...runtime.EngineOption) (*Service, error) {
+	engine, err := runtime.NewEngine(wf, runner, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline.NewService: %w", err)
 	}

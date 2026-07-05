@@ -51,7 +51,7 @@ func (f *fakeArtifacts) LoopHistoryPath() string { return "/tmp/loop_history.jso
 
 func newTestAgentTool(t *testing.T, template string) (*AgentTool, *scriptedRunner, *PromptBuilder) {
 	t.Helper()
-	pb, err := NewPromptBuilder()
+	pb, err := NewPromptBuilder("")
 	if err != nil {
 		t.Fatalf("NewPromptBuilder: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestAgentTool_Execute_Blocked(t *testing.T) {
 }
 
 func TestAgentTool_Execute_RunnerError(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	runner := &scriptedRunner{err: errors.New("runner failed")}
 	def := &schema.Tool{Name: "bad", Type: "agent", PromptTemplate: promptCoding}
 	tool, _ := NewAgentTool(def, runner, pb)
@@ -217,7 +217,7 @@ func TestAgentTool_Execute_RunnerError(t *testing.T) {
 }
 
 func TestNewAgentTool_Validation(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	runner := &scriptedRunner{}
 
 	cases := []struct {
@@ -297,7 +297,7 @@ func TestNewCommandTool_Validation(t *testing.T) {
 }
 
 func TestToolRegistry_BuildAndResolve(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	runner := &scriptedRunner{}
 
 	wf := &schema.Workflow{
@@ -347,7 +347,7 @@ func TestToolRegistry_BuildAndResolve(t *testing.T) {
 }
 
 func TestToolRegistry_DuplicateName(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	wf := &schema.Workflow{
 		Tools: []schema.Tool{
 			{Name: "dup", Type: "command", Run: "echo 1"},
@@ -361,7 +361,7 @@ func TestToolRegistry_DuplicateName(t *testing.T) {
 }
 
 func TestToolRegistry_AliasConflict(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	wf := &schema.Workflow{
 		Tools: []schema.Tool{
 			{Name: "a", Type: "command", Run: "echo 1", Aliases: []string{"shared"}},

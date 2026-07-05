@@ -14,11 +14,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/JiGuangWorker/code-bee/internal/agent"
 	"github.com/JiGuangWorker/code-bee/internal/config"
 	"github.com/JiGuangWorker/code-bee/internal/runtime"
+	"github.com/JiGuangWorker/code-bee/internal/schema"
 )
 
 const testFilePermission = 0o600
@@ -297,6 +299,85 @@ func TestServiceDispatchCompletedPath(t *testing.T) {
 		}
 
 		cfg := config.New("owner/repo", 52)
+		result, err := service.Dispatch(context.Background(), cfg)
+		if err != nil {
+			t.Fatalf("Dispatch() unexpected error: %v", err)
+		}
+
+		if !result.Success || !result.Completed {
+			t.Fatalf("Dispatch() result = %+v, want completed success result", result)
+		}
+	})
+}
+
+// TestServiceDispatchCustomWorkflow 验证用户自定义 workflow 配置（非默认）能驱动 Service.Dispatch，
+// 且 --prompts-dir overlay 的自定义模板内容能到达 runner。
+//
+// 端到端覆盖:
+// - 自定义 tool name（my-coder，不在默认 workflow 中）
+// - 自定义 prompt 模板内容（通过 WithPromptsDir overlay 覆盖 coding.md）
+// - 单 stage 无 loop 的最小 pipeline
+func TestServiceDispatchCustomWorkflow(t *testing.T) {
+	withTempWorkingDir(t, func() {
+		// 1. 准备外部 prompts 目录，覆盖 coding.md
+		promptsDir := t.TempDir()
+		customTemplate := "自定义标记-CODING\n仓库: {{.Repo}}\nIssue: #{{.IssueNumber}}\n结果文件: {{.ResultFilePath}}\n"
+		if err := os.WriteFile(filepath.Join(promptsDir, "coding.md"), []byte(customTemplate), testFilePermission); err != nil {
+			t.Fatalf("os.WriteFile(coding.md) unexpected error: %v", err)
+		}
+
+		// 2. 编程式构造最小自定义 workflow
+		wf := &schema.Workflow{
+			Version: "1",
+			Name:    "test-custom-workflow",
+			Tools: []schema.Tool{{
+				Name:           "my-coder",
+				Type:           "agent",
+				Skill:          "自定义编码技能",
+				PromptTemplate: "coding",
+				DisplayName:    "自定义开发者",
+				Aliases:        []string{"自定义开发者"},
+			}},
+			Pipeline: []schema.PipelineStep{{
+				Stage: &schema.Stage{
+					Name:   "custom-coding",
+					Tool:   "my-coder",
+					Output: "custom_result.json",
+				},
+			}},
+		}
+
+		// 3. scriptedRunner 验证自定义 prompt 内容到达
+		runner := &scriptedRunner{
+			t: t,
+			steps: []scriptedStep{
+				{
+					kind: agent.TaskKindCoding,
+					run: func(task string) (*agent.RunResult, error) {
+						if !strings.Contains(task, "自定义标记-CODING") {
+							t.Errorf("custom prompt marker missing, task=\n%s", task)
+						}
+						if !strings.Contains(task, "owner/custom-repo") {
+							t.Errorf("repo not rendered in prompt, task=\n%s", task)
+						}
+						writeJSONFromPrompt(t, task, "结果文件:", `{
+  "status": "DONE",
+  "summary": "自定义编码完成。"
+}`)
+						return &agent.RunResult{Success: true, Output: "custom coding done"}, nil
+					},
+				},
+			},
+		}
+
+		// 4. 构造 service，传入 WithPromptsDir
+		service, err := NewService(fakePlatformClient{}, runner, wf, runtime.WithPromptsDir(promptsDir))
+		if err != nil {
+			t.Fatalf("NewService() unexpected error: %v", err)
+		}
+
+		// 5. 执行 Dispatch
+		cfg := config.New("owner/custom-repo", 77)
 		result, err := service.Dispatch(context.Background(), cfg)
 		if err != nil {
 			t.Fatalf("Dispatch() unexpected error: %v", err)

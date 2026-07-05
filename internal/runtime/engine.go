@@ -28,13 +28,31 @@ type Engine struct {
 	loop     *LoopExecutor
 }
 
+// EngineOption 配置 Engine 的可选参数。
+type EngineOption func(*engineConfig)
+
+// engineConfig 收集 EngineOption 设置的配置。
+type engineConfig struct {
+	promptsDir string
+}
+
+// WithPromptsDir 设置外部 prompt 模板目录（overlay 内置模板）。
+//
+// 传入空字符串等价于不设置（只用内置模板）。
+func WithPromptsDir(dir string) EngineOption {
+	return func(c *engineConfig) {
+		c.promptsDir = dir
+	}
+}
+
 // NewEngine 创建 Engine 实例。
 //
 // 构造逻辑:
-// 1. 加载 PromptBuilder（内置模板）
-// 2. 根据 workflow.Tools 构建 ToolRegistry
-// 3. 创建三种 Executor，通过 dispatch 函数支持嵌套
-func NewEngine(wf *schema.Workflow, runner Runner) (*Engine, error) {
+// 1. 应用 EngineOption 收集配置
+// 2. 加载 PromptBuilder（内置模板 + 可选外部 overlay）
+// 3. 根据 workflow.Tools 构建 ToolRegistry
+// 4. 创建三种 Executor，通过 dispatch 函数支持嵌套
+func NewEngine(wf *schema.Workflow, runner Runner, opts ...EngineOption) (*Engine, error) {
 	if wf == nil {
 		return nil, fmt.Errorf("runtime.NewEngine: workflow is nil")
 	}
@@ -42,7 +60,12 @@ func NewEngine(wf *schema.Workflow, runner Runner) (*Engine, error) {
 		return nil, fmt.Errorf("runtime.NewEngine: runner is nil")
 	}
 
-	pb, err := NewPromptBuilder()
+	cfg := &engineConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	pb, err := NewPromptBuilder(cfg.promptsDir)
 	if err != nil {
 		return nil, fmt.Errorf("runtime.NewEngine: %w", err)
 	}

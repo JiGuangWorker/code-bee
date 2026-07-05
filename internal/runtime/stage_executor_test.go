@@ -11,7 +11,7 @@ import (
 
 func newStageExecutorForTest(t *testing.T, template string) (*StageExecutor, *scriptedRunner, *ExecutionContext) {
 	t.Helper()
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	runner := &scriptedRunner{output: "ok"}
 	wf := &schema.Workflow{
 		Tools: []schema.Tool{
@@ -112,7 +112,7 @@ func TestStageExecutor_Execute_WhenMatched(t *testing.T) {
 }
 
 func TestStageExecutor_Execute_ToolNotFound(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	wf := &schema.Workflow{Tools: []schema.Tool{}}
 	registry, _ := NewToolRegistry(wf, &scriptedRunner{}, pb)
 	ec := NewExecutionContext(wf, &fakeArtifacts{}, PlatformContext{}, &config.Config{})
@@ -205,7 +205,7 @@ func TestStageExecutor_Execute_OnBlockedDefault(t *testing.T) {
 }
 
 func TestStageExecutor_Execute_RunnerError(t *testing.T) {
-	pb, _ := NewPromptBuilder()
+	pb, _ := NewPromptBuilder("")
 	runner := &scriptedRunner{err: errors.New("runner failed")}
 	wf := &schema.Workflow{
 		Tools: []schema.Tool{
