@@ -118,9 +118,15 @@ func (t *AgentTool) buildPromptData(inv Invocation) PromptData {
 	if inv.Config != nil {
 		data.Repo = inv.Config.Repo
 		data.IssueNumber = inv.Config.IssueNumber
-		data.DefaultAgent = inv.Config.DefaultAgent
-		data.ReviewerAgent = inv.Config.ReviewerAgent
-		data.IssuePostAgent = inv.Config.IssuePostAgent
+	}
+	// 角色展示名从 workflow.Tools 按 prompt_template 派生，替代原 Config 硬编码。
+	// 派生 key 用 prompt_template（内置模板名）而非 tool name，因为用户自定义
+	// workflow 时 tool name 可改，但只要复用内置 prompt 模板，派生就能正确工作。
+	if inv.EC != nil {
+		wf := inv.EC.Workflow
+		data.DefaultAgent = lookupDisplayNameByPromptTemplate(wf, promptCoding)
+		data.ReviewerAgent = lookupDisplayNameByPromptTemplate(wf, promptReview)
+		data.IssuePostAgent = lookupDisplayNameByPromptTemplate(wf, promptIssuePost)
 	}
 
 	if inv.Loop != nil {
@@ -215,6 +221,31 @@ func extractStatus(data map[string]any) string {
 	if v, ok := data["status"]; ok {
 		if s, ok := v.(string); ok {
 			return s
+		}
+	}
+	return ""
+}
+
+// lookupDisplayNameByPromptTemplate 在 workflow.Tools 中查找 prompt_template 匹配的 tool，
+// 返回其展示名。派生优先级：display_name > aliases[0] > name > 空字符串。
+//
+// 用于从 workflow 配置派生角色名（如 DefaultAgent/ReviewerAgent/IssuePostAgent），
+// 替代原 Config 硬编码。当用户自定义 workflow 时，只要复用内置 prompt 模板
+// （coding/review/issue-post），派生就能正确取到对应 tool 的展示名。
+func lookupDisplayNameByPromptTemplate(wf *schema.Workflow, tmpl string) string {
+	if wf == nil {
+		return ""
+	}
+	for i := range wf.Tools {
+		t := &wf.Tools[i]
+		if t.PromptTemplate == tmpl {
+			if t.DisplayName != "" {
+				return t.DisplayName
+			}
+			if len(t.Aliases) > 0 {
+				return t.Aliases[0]
+			}
+			return t.Name
 		}
 	}
 	return ""

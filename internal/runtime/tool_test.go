@@ -68,15 +68,27 @@ func newTestAgentTool(t *testing.T, template string) (*AgentTool, *scriptedRunne
 	return tool, runner, pb
 }
 
+// testWorkflow 返回包含 3 个 agent 工具的最小 workflow，供 prompt 派生测试用。
+// display_name 与默认 workflow 一致，确保角色名派生行为向后兼容。
+func testWorkflow() *schema.Workflow {
+	return &schema.Workflow{
+		Tools: []schema.Tool{
+			{Name: "coder", Type: "agent", PromptTemplate: promptCoding, DisplayName: "开发者"},
+			{Name: "reviewer", Type: "agent", PromptTemplate: promptReview, DisplayName: "QA负责人"},
+			{Name: "issue-post", Type: "agent", PromptTemplate: promptIssuePost, DisplayName: "产品经理"},
+		},
+	}
+}
+
 func TestAgentTool_Execute_IssueHandling(t *testing.T) {
 	tool, runner, _ := newTestAgentTool(t, promptIssueHandling)
 
-	ec := NewExecutionContext(nil, &fakeArtifacts{}, PlatformContext{
+	ec := NewExecutionContext(testWorkflow(), &fakeArtifacts{}, PlatformContext{
 		WorkerID:      "w1",
 		IssueURL:      "https://github.com/o/r/issues/1",
 		PlatformName:  "github",
 		PlatformGuide: "guide",
-	}, &config.Config{Repo: "o/r", IssueNumber: 1, DefaultAgent: "开发者"})
+	}, &config.Config{Repo: "o/r", IssueNumber: 1})
 
 	inv := Invocation{
 		StageName:      "issue-handling",
@@ -389,6 +401,72 @@ func TestExtractStatus(t *testing.T) {
 		if got != c.want {
 			t.Errorf("extractStatus(%v) = %q, want %q", c.data, got, c.want)
 		}
+	}
+}
+
+// TestLookupDisplayNameByPromptTemplate 验证从 workflow.Tools 按 prompt_template 派生角色展示名的逻辑。
+func TestLookupDisplayNameByPromptTemplate(t *testing.T) {
+	cases := []struct {
+		name string
+		wf   *schema.Workflow
+		tmpl string
+		want string
+	}{
+		{
+			name: "found_with_display_name",
+			wf: &schema.Workflow{
+				Tools: []schema.Tool{
+					{Name: "coder", Type: "agent", PromptTemplate: "coding", DisplayName: "开发者"},
+				},
+			},
+			tmpl: "coding",
+			want: "开发者",
+		},
+		{
+			name: "found_fallback_to_alias",
+			wf: &schema.Workflow{
+				Tools: []schema.Tool{
+					{Name: "coder", Type: "agent", PromptTemplate: "coding", Aliases: []string{"前端开发"}},
+				},
+			},
+			tmpl: "coding",
+			want: "前端开发",
+		},
+		{
+			name: "found_fallback_to_name",
+			wf: &schema.Workflow{
+				Tools: []schema.Tool{
+					{Name: "my-coder", Type: "agent", PromptTemplate: "coding"},
+				},
+			},
+			tmpl: "coding",
+			want: "my-coder",
+		},
+		{
+			name: "not_found",
+			wf: &schema.Workflow{
+				Tools: []schema.Tool{
+					{Name: "coder", Type: "agent", PromptTemplate: "coding"},
+				},
+			},
+			tmpl: "review",
+			want: "",
+		},
+		{
+			name: "nil_workflow",
+			wf:   nil,
+			tmpl: "coding",
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lookupDisplayNameByPromptTemplate(tc.wf, tc.tmpl)
+			if got != tc.want {
+				t.Fatalf("lookupDisplayNameByPromptTemplate() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
