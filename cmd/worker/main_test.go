@@ -26,9 +26,9 @@ func TestRunCLIReturnsVersion(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--version"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--version"}, &stdout, &stderr, func() (dispatchService, error) {
 		t.Fatal("service factory should not be called for --version")
-		return nil
+		return nil, nil
 	})
 
 	if exitCode != 0 {
@@ -45,9 +45,9 @@ func TestRunCLIRejectsMissingRequiredArgs(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--repo", "owner/repo"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--repo", "owner/repo"}, &stdout, &stderr, func() (dispatchService, error) {
 		t.Fatal("service factory should not be called when args are invalid")
-		return nil
+		return nil, nil
 	})
 
 	if exitCode != 1 {
@@ -64,13 +64,13 @@ func TestRunCLIReturnsSuccessWhenDispatchCompleted(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "8"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "8"}, &stdout, &stderr, func() (dispatchService, error) {
 		return fakeDispatchService{
 			result: &pipeline.Result{
 				Success:   true,
 				Completed: true,
 			},
-		}
+		}, nil
 	})
 
 	if exitCode != 0 {
@@ -87,14 +87,14 @@ func TestRunCLIReturnsBlockedMessage(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "9"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "9"}, &stdout, &stderr, func() (dispatchService, error) {
 		return fakeDispatchService{
 			result: &pipeline.Result{
 				Success: true,
 				Blocked: true,
 				Output:  "缺少外部接口权限。",
 			},
-		}
+		}, nil
 	})
 
 	if exitCode != 1 {
@@ -111,14 +111,14 @@ func TestRunCLIReturnsManualRequiredMessage(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "10"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "10"}, &stdout, &stderr, func() (dispatchService, error) {
 		return fakeDispatchService{
 			result: &pipeline.Result{
 				Success:        true,
 				ManualRequired: true,
 				Output:         "自动循环已无价值。",
 			},
-		}
+		}, nil
 	})
 
 	if exitCode != 1 {
@@ -135,10 +135,10 @@ func TestRunCLIReturnsDispatchError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "11"}, &stdout, &stderr, func() dispatchService {
+	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "11"}, &stdout, &stderr, func() (dispatchService, error) {
 		return fakeDispatchService{
 			err: errors.New("dispatch failed"),
-		}
+		}, nil
 	})
 
 	if exitCode != 1 {
@@ -147,6 +147,24 @@ func TestRunCLIReturnsDispatchError(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "dispatch failed") {
 		t.Fatalf("runCLI(dispatch error) stderr = %q, want contains dispatch error", stderr.String())
+	}
+}
+
+// TestRunCLIReturnsFactoryError 验证 factory 返回错误时 CLI 会输出初始化失败并返回失败退出码。
+func TestRunCLIReturnsFactoryError(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := runCLI([]string{"--repo", "owner/repo", "--issue", "12"}, &stdout, &stderr, func() (dispatchService, error) {
+		return nil, errors.New("workflow load failed")
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("runCLI(factory error) exitCode = %d, want 1", exitCode)
+	}
+
+	if !strings.Contains(stderr.String(), "初始化失败") {
+		t.Fatalf("runCLI(factory error) stderr = %q, want contains 初始化失败", stderr.String())
 	}
 }
 
