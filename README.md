@@ -32,21 +32,211 @@
 
 ### 架构一览
 
-code-bee 通过 **workflow 配置**驱动整个调度流程：读取 Issue → 判断接单/阻塞 → 编码-审查循环 → 提交评论。角色体系和管线流程完全可配置，内置默认 workflow 开箱即用。
+code-bee 采用 **四层分层架构**：CLI 入口 → pipeline 薄封装 → runtime 核心引擎 → schema 配置定义。调度策略完全由 `workflow.yaml` 驱动，runtime.Engine 遍历 Pipeline 并按终止语义决定提前返回或继续。
 
-```
-Issue @agent → runtime.Engine 遍历 workflow.Pipeline
-                 │
-                 ├─ stage: issue-handling    (判断 READY/BLOCKED)
-                 ├─ stage: issue-post-intake  (when: READY → 提交接单评论)
-                 └─ loop: coding-review       (max_iterations: 3)
-                      ├─ stage: coding
-                      ├─ stage: review
-                      ├─ stage: issue-post-completion (when: PASS → 提交完成评论)
-                      └─ judge: loop-judge    (价值评估，决定 continue/stop)
+#### 分层组件架构
+
+```mermaid
+flowchart TB
+    subgraph CLI["cmd/worker · CLI 入口"]
+        main["main() → runCLI()"]
+        build["buildService()<br/>parseExtraFlags + loadWorkflow"]
+        report["reportDispatchResult()<br/>Result → 退出码"]
+    end
+
+    subgraph Schema["internal/schema · 配置定义"]
+        loader["Loader<br/>YAML + 三层 JSON Schema 校验"]
+        types["Workflow / Tool / Stage<br/>Loop / Condition / LoopJudge"]
+    end
+
+    subgraph Pipe["internal/pipeline · 薄封装层"]
+        svc["Service<br/>持有 *Engine + *Workflow"]
+        arts["ArtifactSet<br/>文件契约目录"]
+        adapt["ArtifactResolverAdapter<br/>ArtifactSet ⇄ ArtifactResolver"]
+        contracts["contracts.go<br/>typed result loaders"]
+    end
+
+    subgraph RT["internal/runtime · 核心引擎"]
+        eng["Engine<br/>遍历 Pipeline + 终止语义"]
+        reg["ToolRegistry<br/>name/alias → Tool"]
+        pb["PromptBuilder<br/>embed 内置 + overlay 外部"]
+        ec["ExecutionContext<br/>stages map + loopStack"]
+        se["StageExecutor"]
+        pe["ParallelExecutor<br/>fork-join 写隔离"]
+        le["LoopExecutor<br/>max_iter / exit_when / judge"]
+        at["AgentTool<br/>render + runner.Run"]
+        ct["CommandTool<br/>exec.CommandContext"]
+        ft["FunctionTool (桩)"]
+        arIface["«interface»<br/>ArtifactResolver"]
+        runnerIface["«interface»<br/>Runner"]
+    end
+
+    subgraph Ext["外部依赖"]
+        agentRunner["agent.Runner<br/>Reasonix × DeepSeek"]
+        platformClient["platform.Client<br/>GitHub"]
+    end
+
+    main --> build
+    build -->|"加载 workflow"| loader
+    loader --> types
+    build --> svc
+    main -->|"Dispatch(ctx, cfg)"| svc
+    platformClient --> svc
+    svc --> eng
+    svc --> arts
+    arts --> adapt
+    eng --> ec
+    eng --> se
+    eng --> pe
+    eng --> le
+    se --> reg
+    reg --> at
+    reg --> ct
+    reg --> ft
+    at --> pb
+    at --> runnerIface
+    runnerIface -.->|"实现"| agentRunner
+    at -->|"LoadResult"| arIface
+    arIface -.->|"实现"| adapt
+    adapt --> contracts
+    svc -->|"EngineResult → Result"| report
 ```
 
-![四阶段架构](https://raw.githubusercontent.com/JiGuangWorker/code-bee/main/docs/images/readme/02-architecture.png)
+**分层职责**：
+
+| 层 | 包 | 职责 |
+|----|----|------|
+| CLI | `cmd/worker` | flag 解析、workflow 加载、构造 Service、退出码映射 |
+| pipeline | `internal/pipeline` | 薄封装层：持有 Engine、管理文件契约目录、typed 结果校验 |
+| runtime | `internal/runtime` | 核心引擎：编排原语执行器、工具注册表、prompt 渲染、上下文管理 |
+| schema | `internal/schema` | 配置定义：YAML 加载 + 三层 JSON Schema 语义校验 |
+
+**关键解耦**：runtime 包通过 `ArtifactResolver` 和 `Runner` 两个接口与外部解耦——pipeline 层用 `ArtifactResolverAdapter` 桥接文件契约，CLI 注入真实的 `agent.Runner` 实现。runtime 不依赖 pipeline（避免循环依赖）。
+
+#### Dispatch 调用链路
+
+下图展示单次 `Dispatch` 从 CLI 到智能体执行的完整调用链，含结果文件读写时序：
+
+```mermaid
+sequenceDiagram
+    participant CLI as runCLI
+    participant Svc as Service.Dispatch
+    participant Eng as Engine.Run
+    participant SE as StageExecutor
+    participant Tool as AgentTool
+    participant PB as PromptBuilder
+    participant Runner as agent.Runner
+    participant AR as ArtifactResolver
+    participant FS as 文件系统
+
+    CLI->>Svc: Dispatch(ctx, cfg)
+    Svc->>Svc: 创建 ArtifactSet + PlatformContext
+    Svc->>Svc: 包装 ArtifactResolverAdapter
+    Svc->>Eng: Run(deps{Artifacts, Platform, Config})
+    Eng->>Eng: NewExecutionContext
+    loop 遍历 workflow.Pipeline
+        Eng->>SE: Execute(step, ec)
+        SE->>SE: 求值 when 条件
+        SE->>SE: registry.Resolve(tool)
+        SE->>AR: ResolveResultFile(stageName)
+        AR-->>SE: resultFilePath
+        SE->>FS: ResetResultFile(删除旧文件)
+        SE->>SE: ec.Lookup(input_from)
+        SE->>Tool: Execute(Invocation)
+        Tool->>PB: Build(promptTemplate, data)
+        PB-->>Tool: rendered prompt
+        Tool->>Runner: Run(ctx, kind, prompt)
+        Runner-->>Tool: RunResult{Output}
+        Tool->>AR: LoadResult(stageName, path)
+        AR->>FS: 读取结果文件
+        AR-->>Tool: map[string]any
+        Tool->>Tool: extractStatus → StepResult
+        Tool-->>SE: StepResult
+        SE->>SE: ec.SetResult
+        SE-->>Eng: StepResult
+        alt Blocked / ManualRequired / Completed
+            Eng-->>Svc: 提前返回 EngineResult
+        end
+    end
+    Eng-->>Svc: EngineResult
+    Svc-->>CLI: pipeline.Result
+```
+
+**关键时序点**：
+1. **StageExecutor 先 reset 结果文件**——防止读到上一轮残留数据
+2. **AgentTool 渲染 prompt 后才调 runner**——prompt 数据由 `buildPromptData` 从 ExecutionContext 派生
+3. **结果文件是 stage 间通信媒介**——`ec.SetResult` 存内存快照供 `when`/`exit_when` 求值，`LoadResult` 读磁盘文件做 typed 校验
+4. **终止语义即时生效**——任一 stage 返回 `Blocked`/`ManualRequired`/`Completed`，Engine 立即跳出 Pipeline 循环返回
+
+#### 配置加载与数据流
+
+下图展示 workflow + prompt 模板的加载链，以及结果文件在 stage 间的流转：
+
+```mermaid
+flowchart LR
+    subgraph 配置加载["配置加载（启动时一次性）"]
+        direction TB
+        embedWf["default_workflow.yaml<br/>(go:embed)"]
+        extWf["--workflow xxx.yaml"]
+        loader["schema.Loader<br/>YAML + Schema 校验"]
+        wf["*schema.Workflow"]
+
+        embedP["prompts/*.md<br/>(go:embed, 5 个内置)"]
+        extP["--prompts-dir ./dir/"]
+        pb["PromptBuilder<br/>overlay 同名覆盖"]
+        templates["templates map"]
+
+        embedWf --> loader
+        extWf --> loader
+        loader --> wf
+        embedP --> pb
+        extP --> pb
+        pb --> templates
+    end
+
+    subgraph 运行时["运行时数据流（Dispatch 时）"]
+        direction TB
+        cfg["Config<br/>Repo/Issue"]
+        arts["ArtifactSet<br/>.code-bee/runs/repo/issue-N/"]
+        ec["ExecutionContext<br/>stages map"]
+
+        s1["stage: issue-handling<br/>→ issue_intake_result.json"]
+        s2["stage: coding<br/>→ coding_result.json"]
+        s3["stage: review<br/>→ review_result.json"]
+
+        cfg --> arts
+        s1 -->|"写入"| arts
+        arts -->|"读取"| ec
+        ec -->|"input_from"| s2
+        s2 -->|"写入"| arts
+        arts -->|"读取"| ec
+        ec -->|"input_from"| s3
+        s3 -->|"写入"| arts
+    end
+
+    wf --> ec
+    templates -->|"渲染 prompt"| s1
+    templates -->|"渲染 prompt"| s2
+    templates -->|"渲染 prompt"| s3
+```
+
+**配置加载语义**：
+- **workflow 双源**：`go:embed` 内置 `default_workflow.yaml` 作为兜底，`--workflow` 指定外部 YAML 完全替换（非 overlay）
+- **prompt overlay**：内置 5 个模板（issue-handling/coding/review/issue-post/loop-judge），`--prompts-dir` 目录下同名 `.md` 文件**覆盖**内置，未覆盖的仍用内置（用户只需写想改的）
+- **结果文件流转**：每个 stage 把结构化 JSON 写入 ArtifactSet 目录，下游 stage 通过 `input_from` 经 ExecutionContext 读取，`when`/`exit_when` 条件也基于这些字段求值
+
+#### Engine 终止语义
+
+Engine 遍历 Pipeline 时，根据 `StepResult` 的状态字段决定是否提前返回：
+
+| StepResult 字段 | Engine 行为 | EngineResult |
+|----------------|------------|--------------|
+| `Blocked = true` | 立即终止 | `{Success: true, Blocked: true}` |
+| `ManualRequired = true` | 立即终止 | `{Success: true, ManualRequired: true}` |
+| `Completed = true` | 立即终止 | `{Success: true, Completed: true}` |
+| Pipeline 走完无终止 | 正常结束 | `{Success: true, Completed: true}` |
+
+> ⚠️ **已知缺口**：Engine 遇 `Blocked` 立即终止，导致 `issue-post-blocked` 阶段（阻塞评论提交）无法运行。后续计划通过 `on_blocked: continue` 增强恢复该阶段。
 
 ---
 
