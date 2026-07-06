@@ -1,0 +1,10 @@
+version: "1"
+name: agent-missing-skill
+description: agent 类型工具缺少必填的 skill 和 prompt_template
+tools:
+  - name: coder
+    type: agent
+pipeline:
+  - stage:
+      name: coding
+      tool: coder

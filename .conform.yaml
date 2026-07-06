@@ -12,6 +12,8 @@ structure:
       - backend/internal/parser
       - backend/internal/pipeline
       - backend/internal/platform
+      - backend/internal/runtime
+      - backend/internal/schema
       - backend/pkg/version
       - frontend
       - deploy

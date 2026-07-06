@@ -1,0 +1,15 @@
+version: "1"
+name: alias-duplicate
+description: aliases 数组中存在重复值，违反 uniqueItems
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+    aliases:
+      - 开发者
+      - 开发者
+pipeline:
+  - stage:
+      name: coding
+      tool: coder

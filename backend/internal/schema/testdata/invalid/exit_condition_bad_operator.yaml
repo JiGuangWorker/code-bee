@@ -1,0 +1,28 @@
+version: "1"
+name: bad-exit-condition
+description: exit_when 中 operator 不是合法枚举值
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+  - name: reviewer
+    type: agent
+    skill: "QA负责人Skill/SKILL.md"
+    prompt_template: review
+pipeline:
+  - loop:
+      id: bad-cond
+      max_iterations: 3
+      exit_when:
+        - stage: review
+          field: status
+          operator: is_pass
+          value: PASS
+      body:
+        - stage:
+            name: coding
+            tool: coder
+        - stage:
+            name: review
+            tool: reviewer

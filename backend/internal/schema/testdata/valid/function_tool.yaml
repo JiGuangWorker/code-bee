@@ -1,0 +1,18 @@
+version: "1"
+name: function-tool
+description: 验证 function 类型工具必填 function 字段
+tools:
+  - name: notify
+    type: function
+    function: send_webhook
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+pipeline:
+  - stage:
+      name: coding
+      tool: coder
+  - stage:
+      name: notify
+      tool: notify

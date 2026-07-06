@@ -1,0 +1,39 @@
+$schema: http://json-schema.org/draft-07/schema#
+$id: https://codebee.dev/schemas/v1/loop_judge.json
+title: LoopJudge
+description: 价值评估员配置。judge 本身也是一个工具调用，但其 decision 字段决定 loop 是否继续。
+type: object
+required:
+- tool
+additionalProperties: false
+properties:
+  tool:
+    type: string
+    minLength: 1
+    description: 引用 tools[].name 或 aliases[]
+  start_round:
+    type: integer
+    minimum: 1
+    default: 1
+    description: 从第几轮开始触发 judge。0 或 1 表示始终触发。
+  on_decision:
+    type: object
+    additionalProperties: false
+    properties:
+      CONTINUE:
+        type: string
+        enum:
+        - continue
+      SHRINK_TASK:
+        type: string
+        enum:
+        - continue
+      STOP_MANUAL:
+        type: string
+        enum:
+        - exit
+      STOP_BLOCKED:
+        type: string
+        enum:
+        - exit
+    description: 决策到动作的映射。默认 CONTINUE/SHRINK_TASK=continue, STOP_*=exit。

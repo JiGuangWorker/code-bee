@@ -22,3 +22,4 @@ bin/
 /worker
 frontend/node_modules/
 frontend/dist/
+.trae/

@@ -1,13 +1,19 @@
 // Package pipeline 串联 code-bee 的四阶段 harness 与 coder-reviewer loop。
 //
-// 核心功能:
-// 1. 先执行 Issue 处理阶段，由智能体自行查看 Issue 并把结果写入文件
-// 2. 再进入“编码 -> 审查”的外层循环，由 code-bee 负责状态机调度
-// 3. 所有 Issue 评论都交给专门的 Issue 提交智能体，避免编码阶段直接对外提交
+// 本包在阶段 8 重构后，调度流程完全由 runtime.Engine 驱动：
+//   - Service 持有 *runtime.Engine 和 *schema.Workflow
+//   - Dispatch 构造 ArtifactResolverAdapter + PlatformContext，委托 engine.Run
+//   - 硬编码的 runIssueHandling / runCodingReviewLoop 等函数已删除
+//   - prompt 模板外部化至 internal/runtime/prompts/*.md
+//
+// 保留的职责:
+// 1. 文件契约（ArtifactSet / 历史 / 结果校验）—— contracts.go / artifacts.go / history.go
+// 2. runtime.ArtifactResolver 适配层 —— runtime_adapter.go
+// 3. EngineResult → pipeline.Result 类型转换
 //
 // 开发维护: AI Assistant
 // 创建时间: 2026-07-04
-// 更新时间: 2026-07-04
+// 更新时间: 2026-07-05
 package pipeline
 
 import (
@@ -19,12 +25,8 @@ import (
 	"github.com/JiGuangWorker/code-bee/internal/agent"
 	"github.com/JiGuangWorker/code-bee/internal/config"
 	"github.com/JiGuangWorker/code-bee/internal/platform"
-)
-
-const (
-	maxCodingReviewRounds       = 3
-	maxConsecutiveUnknownReview = 2
-	maxIssuePostAttempts        = 2
+	"github.com/JiGuangWorker/code-bee/internal/runtime"
+	"github.com/JiGuangWorker/code-bee/internal/schema"
 )
 
 // Runner 定义智能体执行器的抽象，用于解耦 Service 与具体的 agent.Runner 实现。
@@ -32,554 +34,100 @@ type Runner interface {
 	Run(ctx context.Context, kind agent.TaskKind, task string) (*agent.RunResult, error)
 }
 
-// Service 负责串联平台技能包和四阶段调度流程。
+// Service 负责串联平台技能包和 runtime.Engine 驱动的调度流程。
+//
+// 在阶段 8 重构后，Service 仅保留薄封装：
+//   - 持有 *runtime.Engine（构造时一次性创建）
+//   - Dispatch 时构造文件契约和平台上下文，委托 engine.Run
 type Service struct {
 	platformClient platform.Client
 	runner         Runner
+	engine         *runtime.Engine
+	workflow       *schema.Workflow
 }
 
-// dispatchContext 统一收纳整个 harness 运行中会重复使用的上下文。
-type dispatchContext struct {
-	// workerID 是当前实例的稳定标识，用于写入所有阶段的提示词。
-	workerID string
+// NewService 创建基于 runtime.Engine 的调度服务。
+//
+// 参数:
+// - platformClient: 平台客户端（GitHub 等），用于构造 Issue URL 和技能包说明
+// - runner: 智能体执行器，由 runtime.AgentTool 包装调用
+// - wf: 已校验的 workflow 配置，驱动整个调度流程
+// - opts: 可选的 EngineOption（如 runtime.WithPromptsDir），透传给 runtime.NewEngine
+//
+// 返回值:
+// - *Service: 可用于 Dispatch 的服务实例
+// - error: 当 runtime.Engine 构造失败时返回
+func NewService(platformClient platform.Client, runner Runner, wf *schema.Workflow, opts ...runtime.EngineOption) (*Service, error) {
+	engine, err := runtime.NewEngine(wf, runner, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline.NewService: %w", err)
+	}
 
-	// issueURL 是目标 Issue 的直接入口。
-	issueURL string
-
-	// platformName 是当前代码托管平台名称。
-	platformName string
-
-	// platformGuide 是当前平台提供给智能体的技能包说明。
-	platformGuide string
-
-	// artifacts 是本次运行对应的文件工件集合。
-	artifacts *ArtifactSet
-}
-
-// NewService 创建最小执行流水线服务。
-func NewService(platformClient platform.Client, runner Runner) *Service {
 	return &Service{
 		platformClient: platformClient,
 		runner:         runner,
-	}
+		engine:         engine,
+		workflow:       wf,
+	}, nil
 }
 
-// Dispatch 执行四阶段 harness。
+// Dispatch 执行 workflow 配置驱动的调度流程。
 //
 // 核心逻辑:
-// - 第一步执行 Issue 处理阶段，并通过专门的 Issue 提交智能体完成接单/阻塞回复
-// - 第二步进入 coder-reviewer loop，保证“编码”和“审查”是两个独立任务
-// - 第三步仅以 reviewer PASS 且最终 completion 回复成功提交作为退出条件
+// 1. 创建本次运行的 ArtifactSet（文件契约目录）
+// 2. 构造 ArtifactResolverAdapter（适配 runtime.ArtifactResolver 接口）
+// 3. 构造 PlatformContext（workerID / issueURL / 平台技能包）
+// 4. 委托 engine.Run 执行 workflow.Pipeline
+// 5. 把 EngineResult 转成 pipeline.Result 返回
 func (s *Service) Dispatch(ctx context.Context, cfg *config.Config) (*Result, error) {
-	dispatchCtx, err := s.newDispatchContext(cfg)
+	artifacts, err := NewArtifactSet(cfg.Repo, cfg.IssueNumber)
 	if err != nil {
 		return &Result{Success: false}, fmt.Errorf("pipeline.Service.Dispatch: %w", err)
 	}
 
-	issueResult, issueOutput, err := s.runIssueHandling(ctx, cfg, dispatchCtx)
+	resolver := NewArtifactResolverAdapter(artifacts)
+
+	platformCtx := runtime.PlatformContext{
+		WorkerID:      resolveWorkerID(),
+		IssueURL:      s.platformClient.BuildIssueURL(cfg.Repo, cfg.IssueNumber),
+		PlatformName:  s.platformClient.Name(),
+		PlatformGuide: s.platformClient.BuildSkillInstruction(cfg.Repo, cfg.IssueNumber),
+	}
+
+	deps := runtime.RunDependencies{
+		Artifacts: resolver,
+		Platform:  platformCtx,
+		Config:    cfg,
+	}
+
+	engineResult, err := s.engine.Run(ctx, deps)
+	result := toPipelineResult(engineResult)
 	if err != nil {
-		return &Result{
-			Success: false,
-			Output:  issueOutput,
-		}, fmt.Errorf("pipeline.Service.Dispatch: %w", err)
+		return result, fmt.Errorf("pipeline.Service.Dispatch: %w", err)
 	}
 
-	if issueResult.BlockedStatus() {
-		return &Result{
-			Success: true,
-			Blocked: true,
-			Output:  issueOutput,
-		}, nil
-	}
-
-	loopResult, loopErr := s.runCodingReviewLoop(ctx, cfg, dispatchCtx, issueResult)
-	if loopErr != nil {
-		return loopResult, fmt.Errorf("pipeline.Service.Dispatch: %w", loopErr)
-	}
-
-	return loopResult, nil
+	return result, nil
 }
 
-// newDispatchContext 构造本次 harness 运行所需的稳定上下文。
-func (s *Service) newDispatchContext(cfg *config.Config) (dispatchContext, error) {
-	artifacts, err := NewArtifactSet(cfg.Repo, cfg.IssueNumber)
-	if err != nil {
-		return dispatchContext{}, err
-	}
-
-	return dispatchContext{
-		workerID:     resolveWorkerID(),
-		issueURL:     s.platformClient.BuildIssueURL(cfg.Repo, cfg.IssueNumber),
-		platformName: s.platformClient.Name(),
-		platformGuide: s.platformClient.BuildSkillInstruction(
-			cfg.Repo,
-			cfg.IssueNumber,
-		),
-		artifacts: artifacts,
-	}, nil
-}
-
-// runIssueHandling 执行第一阶段的 Issue 处理任务，并确保接单/阻塞回复由 Issue 提交智能体完成。
-func (s *Service) runIssueHandling(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-) (*IssueHandlingResult, string, error) {
-	var lastOutput string
-
-	if err := resetResultFile(dispatchCtx.artifacts.IssueHandlingResultPath()); err != nil {
-		return nil, "", err
-	}
-
-	issuePrompt := buildIssueHandlingPrompt(
-		cfg,
-		dispatchCtx.workerID,
-		dispatchCtx.issueURL,
-		dispatchCtx.platformName,
-		dispatchCtx.platformGuide,
-		dispatchCtx.artifacts.IssueHandlingResultPath(),
-		"",
-	)
-
-	issueRunResult, err := s.runner.Run(ctx, agent.TaskKindIssueHandling, issuePrompt)
-	if err != nil {
-		return nil, safeOutput(issueRunResult), fmt.Errorf("issue handling failed: %w", err)
-	}
-	lastOutput = issueRunResult.Output
-
-	issueResult, loadErr := loadIssueHandlingResult(dispatchCtx.artifacts.IssueHandlingResultPath())
-	if loadErr != nil {
-		return nil, lastOutput, fmt.Errorf("load issue handling result: %w", loadErr)
-	}
-
-	postResult, postOutput, postErr := s.runIssuePostWithRetry(
-		ctx,
-		cfg,
-		dispatchCtx,
-		"intake",
-		dispatchCtx.artifacts.IssueHandlingResultPath(),
-	)
-	lastOutput = postOutput
-	if postErr != nil {
-		return nil, lastOutput, postErr
-	}
-
-	if postResult.BlockedStatus() {
-		issueResult.Status = issueStatusBlocked
-	}
-
-	return issueResult, lastOutput, nil
-}
-
-// runCodingReviewLoop 执行 coder-reviewer 外层循环，并在 PASS 后调用 Issue 提交智能体提交最终回复。
-func (s *Service) runCodingReviewLoop(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	issueResult *IssueHandlingResult,
-) (*Result, error) {
-	var (
-		lastOutput          string
-		reviewerFeedback    string
-		consecutiveUnknowns int
-	)
-
-	maxRounds := maxCodingReviewRounds
-	if cfg.MaxCodingReviewRounds > 0 {
-		maxRounds = cfg.MaxCodingReviewRounds
-	}
-
-	history := &LoopHistory{
-		Repo:        cfg.Repo,
-		IssueNumber: cfg.IssueNumber,
-		MaxRounds:   maxRounds,
-	}
-
-	for round := 1; round <= maxRounds; round++ {
-		codingResult, codingOutput, codingErr := s.runCodingRound(
-			ctx,
-			cfg,
-			dispatchCtx,
-			issueResult,
-			reviewerFeedback,
-			round,
-		)
-		if codingErr != nil {
-			return &Result{Success: false, Output: codingOutput}, codingErr
-		}
-
-		if codingResult.BlockedStatus() {
-			return &Result{Success: true, Blocked: true, Output: codingOutput}, nil
-		}
-
-		reviewResult, reviewOutput, reviewErr := s.runReviewRound(
-			ctx,
-			cfg,
-			dispatchCtx,
-			issueResult,
-			codingResult,
-			round,
-			consecutiveUnknowns,
-		)
-		if reviewErr != nil {
-			return &Result{Success: false, Output: reviewOutput}, reviewErr
-		}
-		lastOutput = reviewOutput
-
-		if err := appendAndSaveHistory(history, dispatchCtx.artifacts.LoopHistoryPath(), round, codingResult, reviewResult); err != nil {
-			return &Result{Success: false, Output: lastOutput}, err
-		}
-
-		if terminalResult, terminalErr, isTerminal := s.checkReviewTerminal(
-			ctx, cfg, dispatchCtx, reviewResult, reviewOutput,
-		); isTerminal {
-			return terminalResult, terminalErr
-		}
-
-		reviewerFeedback, consecutiveUnknowns = nextReviewerFeedback(reviewResult, consecutiveUnknowns)
-
-		judgeOutcome, judgeRan := s.runLoopJudgeIfNeeded(ctx, cfg, dispatchCtx, round, maxRounds, reviewerFeedback)
-		if judgeRan {
-			if judgeOutcome.result != nil {
-				return judgeOutcome.result, nil
-			}
-			lastOutput = judgeOutcome.output
-			reviewerFeedback = judgeOutcome.nextFeedback
-		}
-	}
-
-	return &Result{Success: true, ManualRequired: true, Output: lastOutput}, nil
-}
-
-// appendAndSaveHistory 将单轮结果追加到历史并持久化到磁盘。
-func appendAndSaveHistory(
-	history *LoopHistory,
-	historyFilePath string,
-	round int,
-	codingResult *CodingResult,
-	reviewResult *ReviewResult,
-) error {
-	if err := history.appendRound(round, codingResult, reviewResult); err != nil {
-		return fmt.Errorf("append history round %d: %w", round, err)
-	}
-	if err := saveLoopHistory(historyFilePath, history); err != nil {
-		return fmt.Errorf("save loop history round %d: %w", round, err)
-	}
-	return nil
-}
-
-// checkReviewTerminal 检查 review 结果是否处于终态（PASS 或 BLOCKED）。
-// 返回值:
-// - result: 终态结果（非 nil 时表示应立即返回）
-// - err: 终态对应的错误
-// - bool: 是否为终态
-func (s *Service) checkReviewTerminal(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	reviewResult *ReviewResult,
-	reviewOutput string,
-) (*Result, error, bool) {
-	if reviewResult.Passed() {
-		result, err := s.finishSuccessfulReview(ctx, cfg, dispatchCtx)
-		return result, err, true
-	}
-	if reviewResult.BlockedStatus() {
-		return &Result{
-			Success:        true,
-			Blocked:        true,
-			ManualRequired: true,
-			Output:         reviewOutput,
-		}, nil, true
-	}
-	return nil, nil, false
-}
-
-// loopJudgeOutcome 收集价值评估员单次执行后的中间产物，便于主循环判断是否需要中断或调整反馈。
-type loopJudgeOutcome struct {
-	result       *Result
-	output       string
-	nextFeedback string
-}
-
-// runLoopJudgeIfNeeded 在满足触发条件时执行价值评估员，并返回其对外层循环的影响。
+// toPipelineResult 把 runtime.EngineResult 转成 pipeline.Result。
 //
-// 输入参数:
-// - reviewerFeedback: 当前累积的 reviewer 反馈，SHRINK_TASK 时会与之合并
-//
-// 返回值:
-// - loopJudgeOutcome: 评估结果，当 result 为 nil 时表示继续循环
-// - bool: 是否实际执行了价值评估员
-func (s *Service) runLoopJudgeIfNeeded(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	round, maxRounds int,
-	reviewerFeedback string,
-) (loopJudgeOutcome, bool) {
-	if !shouldRunLoopJudge(cfg, round) {
-		return loopJudgeOutcome{}, false
+// 两个结构体字段对齐，转换是纯数据拷贝。
+func toPipelineResult(r *runtime.EngineResult) *Result {
+	if r == nil {
+		return &Result{Success: false}
 	}
-
-	judgeResult, judgeOutput, judgeErr := s.runLoopJudgeRound(ctx, cfg, dispatchCtx, round, maxRounds)
-	if judgeErr != nil {
-		return loopJudgeOutcome{result: &Result{Success: false, Output: judgeOutput}}, true
+	return &Result{
+		Success:        r.Success,
+		Completed:      r.Completed,
+		Blocked:        r.Blocked,
+		ManualRequired: r.ManualRequired,
+		Output:         r.Output,
 	}
-
-	outcome := loopJudgeOutcome{output: judgeOutput, nextFeedback: reviewerFeedback}
-	switch judgeResult.Decision {
-	case loopJudgeDecisionStopManual:
-		outcome.result = &Result{Success: true, ManualRequired: true, Output: judgeOutput}
-	case loopJudgeDecisionStopBlocked:
-		outcome.result = &Result{Success: true, Blocked: true, ManualRequired: true, Output: judgeOutput}
-	case loopJudgeDecisionShrinkTask:
-		outcome.nextFeedback = buildLoopJudgeFeedback(judgeResult) + "\n\n" + reviewerFeedback
-	}
-	return outcome, true
-}
-
-// finishSuccessfulReview 在 reviewer 明确 PASS 后，调用 Issue 提交智能体提交最终完成评论。
-func (s *Service) finishSuccessfulReview(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-) (*Result, error) {
-	postResult, postOutput, postErr := s.runIssuePostWithRetry(
-		ctx,
-		cfg,
-		dispatchCtx,
-		"completion",
-		dispatchCtx.artifacts.ReviewResultPath(),
-	)
-	if postErr != nil {
-		return &Result{
-			Success:        true,
-			ManualRequired: true,
-			Output:         postOutput,
-		}, postErr
-	}
-
-	if postResult.BlockedStatus() {
-		return &Result{
-			Success:        true,
-			Blocked:        true,
-			ManualRequired: true,
-			Output:         postOutput,
-		}, nil
-	}
-
-	return &Result{Success: true, Completed: true, Output: postOutput}, nil
-}
-
-// runCodingRound 执行单轮编码任务，并从结果文件中读取结构化结果。
-func (s *Service) runCodingRound(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	issueResult *IssueHandlingResult,
-	reviewerFeedback string,
-	round int,
-) (*CodingResult, string, error) {
-	if err := resetResultFile(dispatchCtx.artifacts.CodingResultPath()); err != nil {
-		return nil, "", err
-	}
-
-	codingPrompt := buildCodingPrompt(
-		cfg,
-		dispatchCtx.workerID,
-		dispatchCtx.issueURL,
-		dispatchCtx.platformName,
-		dispatchCtx.platformGuide,
-		issueResult,
-		dispatchCtx.artifacts.CodingResultPath(),
-		reviewerFeedback,
-		round,
-		maxCodingReviewRounds,
-	)
-
-	codingRunResult, err := s.runner.Run(ctx, agent.TaskKindCoding, codingPrompt)
-	if err != nil {
-		return nil, safeOutput(codingRunResult), fmt.Errorf("coding round %d failed: %w", round, err)
-	}
-
-	codingResult, loadErr := loadCodingResult(dispatchCtx.artifacts.CodingResultPath())
-	if loadErr != nil {
-		return nil, codingRunResult.Output, fmt.Errorf("load coding round %d result: %w", round, loadErr)
-	}
-
-	return codingResult, codingRunResult.Output, nil
-}
-
-// runReviewRound 执行单轮审查任务，并从结果文件中读取结构化结果。
-func (s *Service) runReviewRound(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	issueResult *IssueHandlingResult,
-	codingResult *CodingResult,
-	round int,
-	consecutiveUnknowns int,
-) (*ReviewResult, string, error) {
-	if err := resetResultFile(dispatchCtx.artifacts.ReviewResultPath()); err != nil {
-		return nil, "", err
-	}
-
-	reviewPrompt := buildReviewPrompt(
-		cfg,
-		dispatchCtx.workerID,
-		dispatchCtx.issueURL,
-		dispatchCtx.platformName,
-		dispatchCtx.platformGuide,
-		issueResult,
-		codingResult,
-		dispatchCtx.artifacts.ReviewResultPath(),
-		round,
-		maxCodingReviewRounds,
-		consecutiveUnknowns,
-	)
-
-	reviewRunResult, err := s.runner.Run(ctx, agent.TaskKindReview, reviewPrompt)
-	if err != nil {
-		return nil, safeOutput(reviewRunResult), fmt.Errorf("review round %d failed: %w", round, err)
-	}
-
-	reviewResult, loadErr := loadReviewResult(dispatchCtx.artifacts.ReviewResultPath())
-	if loadErr != nil {
-		return nil, reviewRunResult.Output, fmt.Errorf("load review round %d result: %w", round, loadErr)
-	}
-
-	return reviewResult, reviewRunResult.Output, nil
-}
-
-// runIssuePostWithRetry 执行 Issue 提交阶段，并在被 REJECTED 时允许专门的提交智能体自我修正一次。
-func (s *Service) runIssuePostWithRetry(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	purpose string,
-	sourceFilePath string,
-) (*IssuePostResult, string, error) {
-	var (
-		lastOutput       string
-		previousFeedback string
-		resultFilePath   = dispatchCtx.artifacts.IssuePostResultPath(purpose)
-	)
-
-	for attempt := 1; attempt <= maxIssuePostAttempts; attempt++ {
-		if err := resetResultFile(resultFilePath); err != nil {
-			return nil, lastOutput, err
-		}
-
-		postPrompt := buildIssuePostPrompt(
-			cfg,
-			dispatchCtx.workerID,
-			dispatchCtx.issueURL,
-			dispatchCtx.platformName,
-			dispatchCtx.platformGuide,
-			purpose,
-			sourceFilePath,
-			resultFilePath,
-			previousFeedback,
-		)
-
-		postRunResult, err := s.runner.Run(ctx, agent.TaskKindIssuePost, postPrompt)
-		if err != nil {
-			return nil, safeOutput(postRunResult), fmt.Errorf("issue post %s attempt %d failed: %w", purpose, attempt, err)
-		}
-		lastOutput = postRunResult.Output
-
-		postResult, loadErr := loadIssuePostResult(resultFilePath)
-		if loadErr != nil {
-			return nil, lastOutput, fmt.Errorf("load issue post %s attempt %d result: %w", purpose, attempt, loadErr)
-		}
-
-		if postResult.Posted() || postResult.BlockedStatus() {
-			return postResult, lastOutput, nil
-		}
-
-		previousFeedback = postResult.Feedback
-	}
-
-	return nil, lastOutput, fmt.Errorf("issue post %s rejected after %d attempts", purpose, maxIssuePostAttempts)
-}
-
-// nextReviewerFeedback 基于本轮 reviewer 结果生成下一轮 coder 要消费的反馈，并维护 UNKNOWN 计数。
-func nextReviewerFeedback(reviewResult *ReviewResult, consecutiveUnknowns int) (string, int) {
-	if reviewResult.Unknown() {
-		consecutiveUnknowns++
-	} else {
-		consecutiveUnknowns = 0
-	}
-
-	feedback := buildReviewerFeedback(reviewResult)
-	if consecutiveUnknowns >= maxConsecutiveUnknownReview {
-		feedback += "\n\n强制要求：下一轮优先补充证据，不要继续盲改代码。"
-	}
-
-	return feedback, consecutiveUnknowns
-}
-
-// buildReviewerFeedback 将 reviewer 结构化结果转成下一轮 coder 的输入摘要。
-func buildReviewerFeedback(reviewResult *ReviewResult) string {
-	return fmt.Sprintf(
-		"审查结论:\n%s\n\n验收项判断:\n%s\n\n缺失项:\n%s\n\n下一步要求:\n%s",
-		reviewResult.Summary,
-		reviewResult.CheckResult,
-		reviewResult.Missing,
-		reviewResult.NextAction,
-	)
-}
-
-// runLoopJudgeRound 执行单轮价值评估任务。
-func (s *Service) runLoopJudgeRound(
-	ctx context.Context,
-	cfg *config.Config,
-	dispatchCtx dispatchContext,
-	round int,
-	maxRounds int,
-) (*LoopJudgeResult, string, error) {
-	resultFilePath := dispatchCtx.artifacts.LoopJudgeResultPath(round)
-	if err := resetResultFile(resultFilePath); err != nil {
-		return nil, "", err
-	}
-
-	judgePrompt := buildLoopJudgePrompt(
-		cfg,
-		dispatchCtx.workerID,
-		dispatchCtx.issueURL,
-		dispatchCtx.platformName,
-		dispatchCtx.platformGuide,
-		round,
-		maxRounds,
-		resultFilePath,
-		dispatchCtx.artifacts.LoopHistoryPath(),
-	)
-
-	judgeRunResult, err := s.runner.Run(ctx, agent.TaskKindLoopJudge, judgePrompt)
-	if err != nil {
-		return nil, safeOutput(judgeRunResult), fmt.Errorf("loop judge round %d failed: %w", round, err)
-	}
-
-	judgeResult, loadErr := loadLoopJudgeResult(resultFilePath)
-	if loadErr != nil {
-		return nil, judgeRunResult.Output, fmt.Errorf("load loop judge round %d result: %w", round, loadErr)
-	}
-
-	return judgeResult, judgeRunResult.Output, nil
-}
-
-// buildLoopJudgeFeedback 将价值评估结果转成下一轮 coder 的输入摘要。
-func buildLoopJudgeFeedback(judgeResult *LoopJudgeResult) string {
-	return fmt.Sprintf(
-		"价值评估结论:\n决策: %s\n原因: %s\n证据: %s\n下一步: %s",
-		judgeResult.Decision,
-		judgeResult.Reason,
-		judgeResult.Evidence,
-		judgeResult.NextAction,
-	)
 }
 
 // resetResultFile 在每轮调用前删除旧的结果文件，防止读取到上一次残留结果。
+//
+// 由 ArtifactResolverAdapter.ResetResultFile 复用。
 func resetResultFile(filePath string) error {
 	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reset result file %s: %w", filePath, err)
@@ -589,6 +137,8 @@ func resetResultFile(filePath string) error {
 }
 
 // resolveWorkerID 解析当前执行实例的稳定 Worker 标识。
+//
+// 优先级: WORKER_ID 环境变量 > hostname > "unknown-worker"。
 func resolveWorkerID() string {
 	if workerID := strings.TrimSpace(os.Getenv("WORKER_ID")); workerID != "" {
 		return workerID
@@ -600,25 +150,4 @@ func resolveWorkerID() string {
 	}
 
 	return "unknown-worker"
-}
-
-// safeOutput 在上层需要透传 Runner 输出时提供空值兜底。
-func safeOutput(result *agent.RunResult) string {
-	if result == nil {
-		return ""
-	}
-
-	return result.Output
-}
-
-// shouldRunLoopJudge 判断当前轮次是否应触发价值评估员。
-//
-// 规则:
-// - 如果 LoopJudgeStartRound <= 0，始终触发
-// - 否则，当 round >= LoopJudgeStartRound 时触发
-func shouldRunLoopJudge(cfg *config.Config, round int) bool {
-	if cfg.LoopJudgeStartRound <= 0 {
-		return true
-	}
-	return round >= cfg.LoopJudgeStartRound
 }

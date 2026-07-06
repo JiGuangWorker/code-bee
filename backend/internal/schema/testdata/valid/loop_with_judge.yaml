@@ -1,0 +1,56 @@
+version: "1"
+name: loop-with-judge
+description: 验证完整 loop + judge 配置，对齐现有 coder-reviewer 流程
+tools:
+  - name: coder
+    type: agent
+    skill: "开发者Skill/SKILL.md"
+    prompt_template: coding
+  - name: reviewer
+    type: agent
+    skill: "QA负责人Skill/SKILL.md"
+    prompt_template: review
+  - name: judge
+    type: agent
+    skill: "技术负责人Skill/SKILL.md"
+    prompt_template: loop-judge
+  - name: poster
+    type: agent
+    skill: "产品经理Skill/SKILL.md"
+    prompt_template: issue-post
+pipeline:
+  - loop:
+      id: dev-loop
+      max_iterations: 3
+      max_consecutive_unknown: 2
+      timeout: 30m
+      exit_when:
+        - stage: review
+          field: status
+          operator: equals
+          value: PASS
+        - stage: review
+          field: status
+          operator: equals
+          value: BLOCKED
+      body:
+        - stage:
+            name: coding
+            tool: coder
+            output: coding_result.json
+        - stage:
+            name: review
+            tool: reviewer
+            input_from: coding
+            output: review_result.json
+        - stage:
+            name: judge
+            tool: judge
+            when: "round >= 2"
+      judge:
+        tool: judge
+        start_round: 2
+  - stage:
+      name: post
+      tool: poster
+      when: "review.status == \"PASS\""
