@@ -94,17 +94,19 @@ code-bee --repo your-org/your-repo --issue 42
 
 ```
 .
-├── cmd/worker/          # CLI 入口
-├── internal/
-│   ├── agent/           # 编码智能体调度
-│   ├── config/          # 配置管理
-│   ├── parser/          # Issue 解析
-│   ├── pipeline/        # 执行管线
-│   └── platform/        # 平台适配
-├── pkg/version/         # 版本信息
-├── Makefile             # 统一操作入口
+├── backend/             # Go 后端工程
+│   ├── cmd/worker/      # CLI 入口
+│   ├── internal/        # 私有代码
+│   ├── pkg/version/     # 版本信息
+│   ├── go.mod
+│   └── go.sum
+├── frontend/            # React 前端工程（预留）
+├── deploy/              # 部署资产（预留）
+├── docs/                # 项目文档与设计图
+├── .skills/             # 智能体技能资产
+├── Makefile             # 仓库级统一操作入口
 ├── .conform.yaml        # 目录结构校验
-└── .golangci.yml        # 代码规范检查
+└── .golangci.yml        # Go 代码规范检查
 ```
 
 ---
@@ -136,11 +138,14 @@ code-bee 的核心已经稳定，未来计划扩展的方向包括：
 ### 开发命令
 
 ```bash
-make build              # 编译
-make test               # 运行测试
-make lint               # 代码检查
-make check-structure    # 目录结构校验
-make check-all          # 全部校验
+make build                 # 编译后端二进制
+make test-backend-unit     # 后端单元测试
+make test-backend-race     # 后端 race 测试
+make lint-backend          # 后端代码检查
+make check-structure       # 目录结构校验
+make check-commits         # 提交信息校验
+make check-all             # 提交前静态门禁
+make release-check         # 发布前总校验
 ```
 
 ---

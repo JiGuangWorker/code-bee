@@ -1,0 +1,70 @@
+# code-bee · 发布流水线
+#
+# 核心功能:
+# 1. 在 tag 发布或手动触发时执行发布前总校验与最小冒烟校验，防止未通过门禁的代码进入发布阶段
+# 2. 构建后端二进制并在 tag 场景下创建 GitHub Release，确保发布动作与主干质量门禁绑定
+#
+# 维护: AI Assistant
+# 创建时间: 2026-07-06
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: 安装发布校验工具
+        run: |
+          go install github.com/siderolabs/conform/cmd/conform@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 校验 tag 格式
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag 格式不符合 Semantic Versioning: $TAG_NAME"
+            exit 1
+          fi
+
+      - name: 发布前总校验
+        run: make release-check
+
+      - name: 发布前最小冒烟校验
+        run: make release-smoke
+
+      - name: 上传发布二进制
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-bee-release-binary
+          path: bin/code-bee
+
+      - name: 创建 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bin/code-bee

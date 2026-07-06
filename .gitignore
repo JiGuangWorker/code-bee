@@ -19,4 +19,6 @@ bin/
 .code-bee/
 
 # Build output
-worker
+/worker
+frontend/node_modules/
+frontend/dist/

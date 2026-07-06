@@ -1,8 +1,8 @@
 # code-bee · 持续集成工作流
 #
 # 核心功能:
-# 1. 在代码推送或 PR 提交时自动运行编译、测试与静态分析
-# 2. 复用 Makefile 中已有的 build / test / lint 目标，保持本地与 CI 行为一致
+# 1. 对提交信息、目录结构、后端静态分析、单元测试、race 检测和构建进行分阶段门禁
+# 2. 复用 Makefile 中的统一命令入口，保证本地、CI、发布前校验使用完全一致的执行口径
 #
 # 触发时机:
 # - push 到 main / master 分支
@@ -10,6 +10,7 @@
 #
 # 维护: AI Assistant
 # 创建时间: 2026-07-04
+# 更新时间: 2026-07-06
 name: CI
 
 on:
@@ -28,10 +29,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Build & Test & Lint
+  commits:
+    name: Check Commits
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: 校验 PR 标题
+        if: github.event_name == 'pull_request'
+        run: ./scripts/check_commit_message.sh --message "${{ github.event.pull_request.title }}"
+
+      - name: 校验最新提交信息
+        if: github.event_name == 'push'
+        run: ./scripts/check_commit_message.sh --head
+
+  structure:
+    name: Check Structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+
+      - name: 安装 conform
+        run: |
+          go install github.com/siderolabs/conform/cmd/conform@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 校验项目目录结构
+        run: make check-structure
+
+  backend-lint:
+    name: Backend Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - commits
+      - structure
 
     steps:
       - name: Checkout 代码
@@ -42,12 +88,19 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: 下载依赖
-        run: go mod download
+        run: cd backend && go mod download
+
+      - name: 安装 golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: 校验 go.mod 同步
         run: |
+          cd backend
           go mod tidy
           if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
             echo "::error::go.mod 或 go.sum 不同步，请在本地运行 go mod tidy 后提交"
@@ -55,14 +108,84 @@ jobs:
             exit 1
           fi
 
-      - name: 编译
-        run: make build
-
-      - name: 单元测试
-        run: make test
-
       - name: 静态分析
-        uses: golangci/golangci-lint-action@v6
+        run: make lint-backend
+
+  backend-unit:
+    name: Backend Unit Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - commits
+      - structure
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          version: latest
-          args: --config .golangci.yml
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: 运行后端单元测试
+        run: make test-backend-unit
+
+  backend-race:
+    name: Backend Race Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - commits
+      - structure
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: 安装 conform
+        run: |
+          go install github.com/siderolabs/conform/cmd/conform@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 运行后端 race 测试
+        run: make test-backend-race
+
+  backend-build:
+    name: Backend Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - backend-lint
+      - backend-unit
+      - backend-race
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: 编译后端
+        run: make build-backend
+
+      - name: 上传二进制产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-bee-backend-binary
+          path: bin/code-bee
