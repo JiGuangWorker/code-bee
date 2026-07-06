@@ -106,7 +106,8 @@ release-check: check-all test-ci build-backend
 release-smoke:
 	@echo "→ 执行发布前最小冒烟校验..."
 	test -f bin/code-bee
-	./bin/code-bee --help >/dev/null
+	# 使用 version 子命令做无副作用冒烟校验，避免帮助输出路径返回非零退出码。
+	./bin/code-bee -version >/dev/null
 	@echo "✅ 冒烟校验通过"
 
 # ============================================================
