@@ -1,0 +1,37 @@
+Generate one standalone 16:9 horizontal Chinese article illustration.
+
+Visual DNA:
+Pure white background. Minimalist black hand-drawn line art. Slightly wobbly pen lines. Lots of empty white space. Sparse red/orange/blue handwritten Chinese annotations. Clean absurd product-sketch feeling. No gradients, no shadows, no paper texture, no complex background, no commercial vector style, no PPT infographic look, no cute mascot poster, no children's illustration, no realistic UI.
+
+Recurring IP character required:
+小黑, a small solid-black absurd creature with white dot eyes, tiny thin legs, blank serious expression, slightly uneven hand-drawn body shape. 小黑 must perform the core conceptual action, not decorate the scene. Make 小黑 serious, deadpan, and slightly bizarre, not cute.
+
+Character variant override:
+Use 教研机制版小黑 as the default Xiaohei variant. Keep the same solid-black body and white dot eyes, but make the silhouette more steady, restrained, and authoritative. Give the head a clear abstract hair silhouette: full, swept back, slightly wavy on the outer edge, with some side volume. The character must not look bald. Use one fixed simplified Zhongshan-suit-like outer contour with the same stand collar, front placket, and overall clothing silhouette every time this character appears. In the same image, the character's hair shape, body proportions, and clothing outline must stay identical; only pose, gesture, viewing direction, and props may change. Use a straight standing posture, calm expression, and decisive gestures such as hands behind back, pointing the direction, reviewing papers, or making a judgment at a desk. This is not a realistic portrait of any historical person. It is an abstract, minimalist, teacher-like leadership aura inside the existing Xiaohei visual system.
+
+Appearance lock:
+同一张图里的教研机制版小黑必须保持同样的发型轮廓、头身比例和立领服装轮廓，只允许动作、手势、姿态、朝向和道具变化。
+
+Theme:
+workflow 驱动薄内核
+
+Structure type:
+Workflow
+
+Core idea:
+code-bee 的调度不是硬编码死流程，而是由 workflow 配置驱动一个很薄的内核，只保留最必要的编排原语。
+
+Composition:
+左侧是一卷写着 workflow 的纸带缓缓进入一台低科技细长机器；机器上只有三个小拨片或小闸位，教研机制版小黑站在机器上认真拉动其中一个拨片，表现少量原语驱动整体流程。机器右侧吐出一张执行纸条，底部有橙色箭头继续向前。整张图强调纸带驱动的小机器，不是复杂架构图，也不要堆太多模块盒子。不要在左上角写任何标题。
+
+Suggested elements:
+workflow纸带 / 细长机器 / 小拨片 / 执行纸条
+
+Chinese handwritten labels:
+workflow / stage / parallel / loop / 执行
+
+Color use:
+Black for main line art and 小黑. Orange for main flow/path/arrows. Red only for key warnings/problems/results. Blue only for secondary notes or feedback/system state.
+
+Constraints:
+One image explains only one core structure. Keep the main subject around 40%-60% of the canvas. Preserve at least 35% blank white space. Use at most 5-8 short handwritten Chinese labels. Do not write a title in the top-left corner. Do not write the structure type on the image. Do not make it a formal diagram, course slide, or dense explainer. Do not copy prior examples or reuse known case compositions unless explicitly requested; invent a fresh visual metaphor for this specific article. It should be clear but not instructional, interesting but not childish, strange but clean.
