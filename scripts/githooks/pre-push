@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# 推送前执行最小可接受测试，避免明显失败的代码进入远端流水线。
+
+set -euo pipefail
+
+make test-backend-unit

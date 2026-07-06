@@ -20,5 +20,6 @@ bin/
 
 # Build output
 /worker
-
+frontend/node_modules/
+frontend/dist/
 .trae/

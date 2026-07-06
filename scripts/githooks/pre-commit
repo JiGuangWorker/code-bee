@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# 提交前执行轻量静态门禁，尽早在本地阻断明显违规。
+
+set -euo pipefail
+
+make lint-backend
+make check-structure

@@ -302,19 +302,19 @@ code-bee --repo your-org/your-repo --issue 42 --workflow ./my-workflow.yaml
 
 ```
 .
-├── cmd/worker/              # CLI 入口，加载 workflow 并启动调度
-├── internal/
-│   ├── agent/               # 编码智能体执行器（runner）
-│   ├── config/              # 运行时配置（Repo/IssueNumber/Token）
-│   ├── parser/              # Issue 解析
-│   ├── pipeline/            # 文件契约 + runtime.Engine 薄封装 + ArtifactResolver 适配层
-│   ├── platform/            # 平台适配（GitHub 等）
-│   ├── runtime/             # 可编排执行引擎（Engine/Tool/Executor/PromptBuilder + 默认 workflow）
-│   └── schema/              # 三层 JSON Schema + YAML 加载器 + 语义校验
-├── pkg/version/             # 版本信息
-├── Makefile                 # 统一操作入口
-├── .conform.yaml            # 目录结构校验
-└── .golangci.yml            # 代码规范检查
+├── backend/             # Go 后端工程
+│   ├── cmd/worker/      # CLI 入口
+│   ├── internal/        # 私有代码（agent/config/editor/parser/pipeline/platform/runtime/schema）
+│   ├── pkg/version/     # 版本信息
+│   ├── go.mod
+│   └── go.sum
+├── frontend/            # React 前端工程（预留）
+├── deploy/              # 部署资产（预留）
+├── docs/                # 项目文档与设计图
+├── .skills/             # 智能体技能资产
+├── Makefile             # 仓库级统一操作入口
+├── .conform.yaml        # 目录结构校验
+└── .golangci.yml        # Go 代码规范检查
 ```
 
 ---
@@ -389,9 +389,9 @@ prompt 模板中的角色展示名（如 `@{{.DefaultAgent}}`）从 `workflow.To
 
 ### 更多细节
 
-- [Schema 定义](internal/schema/schemas/v1/README.md) —— 三层 JSON Schema 与校验机制
-- [默认 workflow](internal/runtime/default_workflow.yaml) —— 内置配置参考
-- [Prompt 模板](internal/runtime/prompts/) —— 5 个内置模板文件
+- [Schema 定义](backend/internal/schema/schemas/v1/README.md) —— 三层 JSON Schema 与校验机制
+- [默认 workflow](backend/internal/runtime/default_workflow.yaml) —— 内置配置参考
+- [Prompt 模板](backend/internal/runtime/prompts/) —— 5 个内置模板文件
 
 ---
 
@@ -425,11 +425,14 @@ code-bee 的场景驱动调度已落地，未来计划扩展的方向包括：
 ### 开发命令
 
 ```bash
-make build              # 编译
-make test               # 运行测试
-make lint               # 代码检查
-make check-structure    # 目录结构校验
-make check-all          # 全部校验
+make build                 # 编译后端二进制
+make test-backend-unit     # 后端单元测试
+make test-backend-race     # 后端 race 测试
+make lint-backend          # 后端代码检查
+make check-structure       # 目录结构校验
+make check-commits         # 提交信息校验
+make check-all             # 提交前静态门禁
+make release-check         # 发布前总校验
 ```
 
 ---

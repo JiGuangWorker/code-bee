@@ -4,17 +4,30 @@
 structure:
   directories:
     required:
-      - cmd/worker
-      - internal/platform
-      - internal/parser
-      - internal/agent
-      - internal/pipeline
-      - internal/config
-      - pkg/version
+      - backend
+      - backend/cmd/worker
+      - backend/internal/agent
+      - backend/internal/config
+      - backend/internal/editor
+      - backend/internal/parser
+      - backend/internal/pipeline
+      - backend/internal/platform
+      - backend/internal/runtime
+      - backend/internal/schema
+      - backend/pkg/version
+      - frontend
+      - deploy
+      - docs
+      - .skills
 
   files:
     required:
       - README.md
       - Makefile
-      - go.mod
-      - cmd/worker/main.go
+      - .golangci.yml
+      - .conform.yaml
+      - backend/go.mod
+      - backend/go.sum
+      - backend/cmd/worker/main.go
+      - frontend/README.md
+      - deploy/README.md
