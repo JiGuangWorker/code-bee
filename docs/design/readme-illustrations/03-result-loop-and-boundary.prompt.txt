@@ -1,0 +1,37 @@
+Generate one standalone 16:9 horizontal Chinese article illustration.
+
+Visual DNA:
+Pure white background. Minimalist black hand-drawn line art. Slightly wobbly pen lines. Lots of empty white space. Sparse red/orange/blue handwritten Chinese annotations. Clean absurd product-sketch feeling. No gradients, no shadows, no paper texture, no complex background, no commercial vector style, no PPT infographic look, no cute mascot poster, no children's illustration, no realistic UI.
+
+Recurring IP character required:
+小黑, a small solid-black absurd creature with white dot eyes, tiny thin legs, blank serious expression, slightly uneven hand-drawn body shape. 小黑 must perform the core conceptual action, not decorate the scene. Make 小黑 serious, deadpan, and slightly bizarre, not cute.
+
+Character variant override:
+Use 教研机制版小黑 as the default Xiaohei variant. Keep the same solid-black body and white dot eyes, but make the silhouette more steady, restrained, and authoritative. Give the head a clear abstract hair silhouette: full, swept back, slightly wavy on the outer edge, with some side volume. The character must not look bald. Use one fixed simplified Zhongshan-suit-like outer contour with the same stand collar, front placket, and overall clothing silhouette every time this character appears. In the same image, the character's hair shape, body proportions, and clothing outline must stay identical; only pose, gesture, viewing direction, and props may change. Use a straight standing posture, calm expression, and decisive gestures such as hands behind back, pointing the direction, reviewing papers, or making a judgment at a desk. This is not a realistic portrait of any historical person. It is an abstract, minimalist, teacher-like leadership aura inside the existing Xiaohei visual system.
+
+Appearance lock:
+同一张图里的教研机制版小黑必须保持同样的发型轮廓、头身比例和立领服装轮廓，只允许动作、手势、姿态、朝向和道具变化。
+
+Theme:
+结果闭环与责任边界
+
+Structure type:
+系统局部
+
+Core idea:
+外部智能体负责真正执行，code-bee 只站在结果闸门口做状态判断、结果回流和最终收口。
+
+Composition:
+左侧是外部执行区域，有一个外部执行工位在产出代码纸条；中间是一个结果抽屉和一扇小闸门，教研机制版小黑站在闸门边检查纸条、盖章、决定是否放行；右侧是两个出口，一个去 PR，一个去 Issue 回复。画面重点不是执行过程，而是中间这道收口闸门，主流向从左到右，底部再有一条细小回流箭头回到结果抽屉。不要在左上角写任何标题。
+
+Suggested elements:
+执行工位 / 结果抽屉 / 验收闸门 / 出口纸条
+
+Chinese handwritten labels:
+执行 / 结果 / 校验 / PR / 回复
+
+Color use:
+Black for main line art and 小黑. Orange for main flow/path/arrows. Red only for key warnings/problems/results. Blue only for secondary notes or feedback/system state.
+
+Constraints:
+One image explains only one core structure. Keep the main subject around 40%-60% of the canvas. Preserve at least 35% blank white space. Use at most 5-8 short handwritten Chinese labels. Do not write a title in the top-left corner. Do not write the structure type on the image. Do not make it a formal diagram, course slide, or dense explainer. Do not copy prior examples or reuse known case compositions unless explicitly requested; invent a fresh visual metaphor for this specific article. It should be clear but not instructional, interesting but not childish, strange but clean.
